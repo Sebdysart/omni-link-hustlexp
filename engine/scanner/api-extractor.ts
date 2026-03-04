@@ -4,8 +4,24 @@ import { createParser } from './tree-sitter.js';
 
 // ─── Exports ────────────────────────────────────────────────────────────────
 
-function lineNumberForIndex(source: string, index: number): number {
-  return source.slice(0, index).split('\n').length;
+function normalizeSignature(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/\s*{\s*$/, '').replace(/;$/, '').trim();
+}
+
+function signatureBeforeBody(node: any): string {
+  return normalizeSignature(node.text.split('{')[0] ?? node.text);
+}
+
+function isGoExportedName(name: string): boolean {
+  return /^[A-Z]/.test(name);
+}
+
+function isRustPublic(node: any): boolean {
+  return node.children.some((child: any) => child.type === 'visibility_modifier' && child.text.startsWith('pub'));
+}
+
+function isJavaPublic(node: any): boolean {
+  return node.children.some((child: any) => child.type === 'modifiers' && /\bpublic\b/.test(child.text));
 }
 
 /**
@@ -23,6 +39,9 @@ export function extractExports(
   }
   if (language === 'swift') {
     return extractSwiftExports(source, file);
+  }
+  if (language === 'python') {
+    return extractPythonExports(source, file);
   }
   if (language === 'go') {
     return extractGoExports(source, file);
@@ -196,55 +215,51 @@ function extractSwiftExports(source: string, file: string): ExportDef[] {
   return results;
 }
 
-function extractGoExports(source: string, file: string): ExportDef[] {
+function extractPythonExports(source: string, file: string): ExportDef[] {
+  const parser = createParser('python');
+  const tree = parser.parse(source);
   const results: ExportDef[] = [];
-  const typePattern = /^\s*type\s+([A-Z]\w*)\s+(struct|interface)\b/gm;
-  const funcPattern = /^\s*func\s+(?:\([^)]*\)\s*)?([A-Z]\w*)\s*\(/gm;
 
-  let match: RegExpExecArray | null;
-  while ((match = typePattern.exec(source)) !== null) {
-    results.push({
-      name: match[1],
-      kind: match[2] === 'struct' ? 'class' : 'interface',
-      signature: match[0].trim(),
-      file,
-      line: lineNumberForIndex(source, match.index),
-    });
-  }
-
-  while ((match = funcPattern.exec(source)) !== null) {
-    results.push({
-      name: match[1],
-      kind: 'function',
-      signature: match[0].trim(),
-      file,
-      line: lineNumberForIndex(source, match.index),
-    });
-  }
-
-  return results;
-}
-
-function extractRustExports(source: string, file: string): ExportDef[] {
-  const results: ExportDef[] = [];
-  const patterns: Array<{ pattern: RegExp; kind: ExportDef['kind'] }> = [
-    { pattern: /^\s*pub\s+fn\s+([A-Za-z_]\w*)\s*\(/gm, kind: 'function' },
-    { pattern: /^\s*pub\s+struct\s+([A-Za-z_]\w*)\b/gm, kind: 'class' },
-    { pattern: /^\s*pub\s+enum\s+([A-Za-z_]\w*)\b/gm, kind: 'enum' },
-    { pattern: /^\s*pub\s+trait\s+([A-Za-z_]\w*)\b/gm, kind: 'interface' },
-    { pattern: /^\s*pub\s+const\s+([A-Za-z_]\w*)\b/gm, kind: 'constant' },
-    { pattern: /^\s*pub\s+type\s+([A-Za-z_]\w*)\b/gm, kind: 'type' },
-  ];
-
-  for (const { pattern, kind } of patterns) {
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(source)) !== null) {
+  for (const child of tree.rootNode.namedChildren) {
+    if (child.type === 'function_definition') {
+      const nameNode = child.childForFieldName('name');
+      if (!nameNode || nameNode.text.startsWith('_')) continue;
       results.push({
-        name: match[1],
-        kind,
-        signature: match[0].trim(),
+        name: nameNode.text,
+        kind: 'function',
+        signature: normalizeSignature(child.text.split(':')[0] ?? child.text),
         file,
-        line: lineNumberForIndex(source, match.index),
+        line: child.startPosition.row + 1,
+      });
+      continue;
+    }
+
+    if (child.type === 'class_definition') {
+      const nameNode = child.childForFieldName('name');
+      if (!nameNode || nameNode.text.startsWith('_')) continue;
+      results.push({
+        name: nameNode.text,
+        kind: 'class',
+        signature: `class ${nameNode.text}`,
+        file,
+        line: child.startPosition.row + 1,
+      });
+      continue;
+    }
+
+    if (child.type === 'expression_statement') {
+      const assignment = child.namedChildren.find((node: any) => node.type === 'assignment');
+      const nameNode = assignment?.childForFieldName('left');
+      if (!nameNode || nameNode.type !== 'identifier' || !/^[A-Z][A-Z0-9_]*$/.test(nameNode.text)) {
+        continue;
+      }
+
+      results.push({
+        name: nameNode.text,
+        kind: 'constant',
+        signature: normalizeSignature(child.text),
+        file,
+        line: child.startPosition.row + 1,
       });
     }
   }
@@ -252,60 +267,197 @@ function extractRustExports(source: string, file: string): ExportDef[] {
   return results;
 }
 
-function extractJavaExports(source: string, file: string): ExportDef[] {
+function extractGoExports(source: string, file: string): ExportDef[] {
+  const parser = createParser('go');
+  const tree = parser.parse(source);
   const results: ExportDef[] = [];
-  const typePattern =
-    /^\s*public\s+(?:abstract\s+|final\s+)?(class|interface|enum|record)\s+([A-Za-z_]\w*)\b/gm;
-  const methodPattern =
-    /^\s*public\s+(?:static\s+|final\s+|synchronized\s+|abstract\s+)*[A-Za-z_<>\[\], ?]+\s+([A-Za-z_]\w*)\s*\([^;{)]*\)\s*(?:throws\s+[A-Za-z0-9_., ]+)?\s*\{/gm;
 
-  let match: RegExpExecArray | null;
-  while ((match = typePattern.exec(source)) !== null) {
-    const kindMap: Record<string, ExportDef['kind']> = {
-      class: 'class',
-      interface: 'interface',
-      enum: 'enum',
-      record: 'class',
-    };
-    results.push({
-      name: match[2],
-      kind: kindMap[match[1]] ?? 'class',
-      signature: match[0].trim(),
-      file,
-      line: lineNumberForIndex(source, match.index),
-    });
+  for (const child of tree.rootNode.namedChildren) {
+    if (child.type === 'type_declaration') {
+      const typeSpecs = child.namedChildren.filter((node: any) => node.type === 'type_spec');
+      for (const typeSpec of typeSpecs) {
+        const nameNode = typeSpec.childForFieldName('name');
+        const typeNode = typeSpec.childForFieldName('type');
+        if (!nameNode || !typeNode || !isGoExportedName(nameNode.text)) continue;
+
+        let kind: ExportDef['kind'] = 'type';
+        let signature = `type ${nameNode.text}`;
+        if (typeNode.type === 'struct_type') {
+          kind = 'class';
+          signature = `type ${nameNode.text} struct`;
+        } else if (typeNode.type === 'interface_type') {
+          kind = 'interface';
+          signature = `type ${nameNode.text} interface`;
+        }
+
+        results.push({
+          name: nameNode.text,
+          kind,
+          signature,
+          file,
+          line: typeSpec.startPosition.row + 1,
+        });
+      }
+      continue;
+    }
+
+    if (child.type === 'function_declaration' || child.type === 'method_declaration') {
+      const nameNode = child.childForFieldName('name');
+      if (!nameNode || !isGoExportedName(nameNode.text)) continue;
+
+      results.push({
+        name: nameNode.text,
+        kind: 'function',
+        signature: signatureBeforeBody(child),
+        file,
+        line: child.startPosition.row + 1,
+      });
+      continue;
+    }
+
+    if (child.type === 'const_declaration' || child.type === 'var_declaration') {
+      const specs = child.namedChildren.filter((node: any) =>
+        node.type === 'const_spec' || node.type === 'var_spec',
+      );
+
+      for (const spec of specs) {
+        const names = spec.namedChildren.filter((node: any) => node.type === 'identifier');
+        for (const nameNode of names) {
+          if (!isGoExportedName(nameNode.text)) continue;
+          results.push({
+            name: nameNode.text,
+            kind: 'constant',
+            signature: normalizeSignature(spec.text),
+            file,
+            line: spec.startPosition.row + 1,
+          });
+        }
+      }
+    }
   }
 
-  while ((match = methodPattern.exec(source)) !== null) {
-    const name = match[1];
-    if (name === 'if' || name === 'for' || name === 'while' || name === 'switch') continue;
+  return results;
+}
+
+function extractRustExports(source: string, file: string): ExportDef[] {
+  const parser = createParser('rust');
+  const tree = parser.parse(source);
+  const results: ExportDef[] = [];
+
+  for (const child of tree.rootNode.namedChildren) {
+    if (!isRustPublic(child)) continue;
+
+    const nameNode = child.childForFieldName('name');
+    if (!nameNode) continue;
+
+    const kindMap: Record<string, ExportDef['kind']> = {
+      function_item: 'function',
+      struct_item: 'class',
+      enum_item: 'enum',
+      trait_item: 'interface',
+      const_item: 'constant',
+      type_item: 'type',
+    };
+    const kind = kindMap[child.type];
+    if (!kind) continue;
+
     results.push({
-      name,
-      kind: 'function',
-      signature: match[0].trim(),
+      name: nameNode.text,
+      kind,
+      signature: signatureBeforeBody(child),
       file,
-      line: lineNumberForIndex(source, match.index),
+      line: child.startPosition.row + 1,
     });
   }
 
   return results;
 }
 
+function extractJavaExports(source: string, file: string): ExportDef[] {
+  const parser = createParser('java');
+  const tree = parser.parse(source);
+  const results: ExportDef[] = [];
+  const typeKindMap: Record<string, ExportDef['kind']> = {
+    class_declaration: 'class',
+    interface_declaration: 'interface',
+    enum_declaration: 'enum',
+    record_declaration: 'class',
+  };
+
+  for (const child of tree.rootNode.namedChildren) {
+    const typeKind = typeKindMap[child.type];
+    if (!typeKind || !isJavaPublic(child)) continue;
+
+    const nameNode = child.childForFieldName('name');
+    if (!nameNode) continue;
+
+    results.push({
+      name: nameNode.text,
+      kind: typeKind,
+      signature: signatureBeforeBody(child),
+      file,
+      line: child.startPosition.row + 1,
+    });
+
+    const body = child.childForFieldName('body');
+    if (!body) continue;
+
+    const isInterface = child.type === 'interface_declaration';
+    for (const member of body.namedChildren) {
+      if (member.type === 'method_declaration') {
+        if (!isInterface && !isJavaPublic(member)) continue;
+
+        const methodName = member.childForFieldName('name');
+        if (!methodName) continue;
+        results.push({
+          name: methodName.text,
+          kind: 'function',
+          signature: signatureBeforeBody(member),
+          file,
+          line: member.startPosition.row + 1,
+        });
+      }
+
+      if (member.type === 'field_declaration' && isJavaPublic(member) && /\bstatic\b/.test(member.text) && /\bfinal\b/.test(member.text)) {
+        const declarators = member.namedChildren.filter((node: any) => node.type === 'variable_declarator');
+        for (const declarator of declarators) {
+          const nameNode = declarator.childForFieldName('name');
+          if (!nameNode) continue;
+          results.push({
+            name: nameNode.text,
+            kind: 'constant',
+            signature: normalizeSignature(member.text),
+            file,
+            line: member.startPosition.row + 1,
+          });
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+const ROUTE_LITERAL_PATTERN = /\/(?:api|v\d+|trpc)\/[A-Za-z0-9_./:{}-]*/;
+
 function extractRoutePathFromLiteral(value: string): string | null {
   if (!value) return null;
 
+  const extractRouteFromPath = (pathValue: string): string | null => {
+    const pathMatch = pathValue.match(ROUTE_LITERAL_PATTERN);
+    if (!pathMatch) return null;
+    return pathMatch[0].replace(/\/$/, '');
+  };
+
   try {
     if (value.startsWith('http://') || value.startsWith('https://')) {
-      return new URL(value).pathname;
+      return extractRouteFromPath(new URL(value).pathname);
     }
   } catch {
     // Ignore invalid URLs and continue with substring extraction.
   }
 
-  const pathMatch = value.match(/\/(?:api|v\d+|trpc)\/[A-Za-z0-9_./:{}-]*/);
-  if (!pathMatch) return null;
-
-  return pathMatch[0].replace(/\/$/, '');
+  return extractRouteFromPath(value);
 }
 
 function makeCallSiteExport(value: string, file: string, line: number): ExportDef {
@@ -322,26 +474,44 @@ export function extractScriptApiCallSites(source: string, file: string): ExportD
   const results: ExportDef[] = [];
   const seen = new Set<string>();
   const lines = source.split('\n');
-  const stringLiteralPattern = /["'`](.*?)["'`]/g;
   const trpcChainPattern =
     /\b(?:trpc|client|api|rpc)((?:\.[A-Za-z_]\w*)+)\.(?:query|mutate|subscribe|useQuery|useMutation)\s*\(/g;
+  const routeCallPatterns = [
+    /fetch\s*\(\s*['"`]([^'"`]+)['"`]/g,
+    /axios\s*\.\s*(?:get|post|put|patch|delete|head|options)\s*\(\s*['"`]([^'"`]+)['"`]/g,
+    /\brequest\s*\(\s*['"`]([^'"`]+)['"`]/g,
+    /\.(?:get|post|put|patch|delete|head|options)\s*\(\s*['"`]([^'"`]+)['"`]/g,
+  ];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const trimmedLine = line.trim();
+    if (
+      trimmedLine.startsWith('//') ||
+      trimmedLine.startsWith('/*') ||
+      trimmedLine.startsWith('*')
+    ) {
+      continue;
+    }
 
-    stringLiteralPattern.lastIndex = 0;
-    let stringMatch: RegExpExecArray | null;
-    while ((stringMatch = stringLiteralPattern.exec(line)) !== null) {
-      const literalValue = stringMatch[1];
-      const path = extractRoutePathFromLiteral(literalValue);
-      if (path) {
+    for (const pattern of routeCallPatterns) {
+      pattern.lastIndex = 0;
+      let routeMatch: RegExpExecArray | null;
+      while ((routeMatch = pattern.exec(line)) !== null) {
+        const path = extractRoutePathFromLiteral(routeMatch[1]);
+        if (!path) continue;
         const key = `route:${path}`;
         if (!seen.has(key)) {
           seen.add(key);
           results.push(makeCallSiteExport(path, file, i + 1));
         }
       }
+    }
 
+    const stringLiteralPattern = /["'`](.*?)["'`]/g;
+    let stringMatch: RegExpExecArray | null;
+    while ((stringMatch = stringLiteralPattern.exec(line)) !== null) {
+      const literalValue = stringMatch[1];
       if (
         (line.includes('trpc') || line.includes('query(') || line.includes('mutation(') || line.includes('subscribe(')) &&
         /^[a-z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9]*)+$/.test(literalValue)
@@ -398,6 +568,14 @@ export function extractSwiftApiCallSites(source: string, file: string): ExportDe
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const trimmedLine = line.trim();
+    if (
+      trimmedLine.startsWith('//') ||
+      trimmedLine.startsWith('/*') ||
+      trimmedLine.startsWith('*')
+    ) {
+      continue;
+    }
 
     // URL paths
     urlPathPattern.lastIndex = 0;

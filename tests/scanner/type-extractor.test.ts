@@ -73,6 +73,17 @@ type User struct {
     expect(types[0].fields).toHaveLength(2);
   });
 
+  it('extracts Go grouped field declarations', () => {
+    const source = `
+type User struct {
+  ID, Email string
+}
+`;
+    const types = extractTypes(source, 'user.go', 'go', 'backend');
+    expect(types).toHaveLength(1);
+    expect(types[0].fields.map((field) => field.name)).toEqual(['ID', 'Email']);
+  });
+
   it('extracts Rust structs', () => {
     const source = `
 pub struct User {
@@ -84,6 +95,15 @@ pub struct User {
     expect(types).toHaveLength(1);
     expect(types[0].name).toBe('User');
     expect(types[0].fields).toHaveLength(2);
+  });
+
+  it('extracts Rust tuple structs with positional fields', () => {
+    const source = `pub struct Pair(pub String, pub Option<String>);`;
+    const types = extractTypes(source, 'pair.rs', 'rust', 'backend');
+    expect(types).toHaveLength(1);
+    expect(types[0].fields).toHaveLength(2);
+    expect(types[0].fields[0].name).toBe('0');
+    expect(types[0].fields[1].optional).toBe(true);
   });
 
   it('extracts Java classes and record fields', () => {
@@ -101,6 +121,17 @@ public class User {
     const recordSource = `public record UserRecord(String id, String email) { }`;
     const recordTypes = extractTypes(recordSource, 'UserRecord.java', 'java', 'backend');
     expect(recordTypes[0].fields).toHaveLength(2);
+  });
+
+  it('extracts Java multiple declarators from a single field declaration', () => {
+    const source = `
+public class User {
+  private String id, email;
+}
+`;
+    const types = extractTypes(source, 'User.java', 'java', 'backend');
+    expect(types).toHaveLength(1);
+    expect(types[0].fields.map((field) => field.name)).toEqual(['id', 'email']);
   });
 
   describe('inheritance tracking', () => {

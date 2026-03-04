@@ -11,6 +11,7 @@ jobs:
     name: Test & Build (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         node-version: [20, 22]
 
@@ -25,7 +26,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
 
       - name: Lint
         run: npm run lint
@@ -33,5 +37,5 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build
-        run: npm run build
+      - name: Benchmark smoke
+        run: npm run benchmark:smoke

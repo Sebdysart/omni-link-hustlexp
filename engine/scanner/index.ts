@@ -57,6 +57,39 @@ const SKIP_DIRS = new Set([
   '.next',
 ]);
 
+const SKIP_PATH_SEGMENTS = new Set([
+  '__fixtures__',
+  '__tests__',
+  'bench',
+  'benchmark',
+  'benchmarks',
+  'doc',
+  'docs',
+  'example',
+  'examples',
+  'fixture',
+  'fixtures',
+  'spec',
+  'specs',
+  'test',
+  'tests',
+]);
+
+function shouldSkipSourceFile(rootDir: string, filePath: string): boolean {
+  const normalized = path.relative(rootDir, filePath).replace(/\\/g, '/').toLowerCase();
+  const segments = normalized.split('/');
+  if (segments.some((segment) => SKIP_PATH_SEGMENTS.has(segment))) {
+    return true;
+  }
+
+  const baseName = segments[segments.length - 1] ?? '';
+  return (
+    baseName.endsWith('.d.ts') ||
+    /\.(test|spec)\.[a-z0-9]+$/.test(baseName) ||
+    /_test\.go$/.test(baseName)
+  );
+}
+
 /**
  * Scan a repository and assemble a full RepoManifest.
  *
@@ -176,7 +209,11 @@ export function scanRepo(config: RepoConfig, fileCache?: FileCache, manifestCach
     // than in their exported signatures. Capture those call sites explicitly so
     // bridge detection works for real clients, not just mocked test signatures.
     if (lang === 'typescript' || lang === 'tsx' || lang === 'javascript') {
-      const callSites = extractScriptApiCallSites(source, relPath);
+      const definedRoutes = new Set(routes.map((route) => route.path));
+      const definedProcedures = new Set(procedures.map((procedure) => procedure.name));
+      const callSites = extractScriptApiCallSites(source, relPath).filter(
+        (entry) => !definedRoutes.has(entry.signature) && !definedProcedures.has(entry.signature),
+      );
       allExports.push(...callSites);
     }
 
@@ -267,6 +304,7 @@ export function scanRepo(config: RepoConfig, fileCache?: FileCache, manifestCach
 function walkDirectory(dir: string): string[] {
   const results: string[] = [];
   const stack: string[] = [dir];
+  const rootDir = dir;
 
   while (stack.length > 0) {
     const current = stack.pop()!;
@@ -286,7 +324,7 @@ function walkDirectory(dir: string): string[] {
         stack.push(fullPath);
       } else if (entry.isFile()) {
         // Only include files with a detectable language
-        if (detectLanguage(entry.name) !== null) {
+        if (detectLanguage(entry.name) !== null && !shouldSkipSourceFile(rootDir, fullPath)) {
           results.push(fullPath);
         }
       }

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.tmp/
 cache/repos/
 cache/graph.json
 cache/digest.json

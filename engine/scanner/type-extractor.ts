@@ -4,23 +4,8 @@ import { createParser } from './tree-sitter.js';
 
 // ─── Type Extraction ────────────────────────────────────────────────────────
 
-function lineNumberForIndex(source: string, index: number): number {
-  return source.slice(0, index).split('\n').length;
-}
-
-function findMatchingBrace(source: string, openBraceIndex: number): number {
-  let depth = 0;
-
-  for (let index = openBraceIndex; index < source.length; index++) {
-    const char = source[index];
-    if (char === '{') depth += 1;
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-
-  return -1;
+function isRustOptionalType(typeText: string): boolean {
+  return /^Option\s*</.test(typeText.trim());
 }
 
 /**
@@ -320,37 +305,56 @@ function extractPythonFields(body: any): TypeField[] {
 // ─── Go Types ───────────────────────────────────────────────────────────────
 
 function extractGoTypes(source: string, file: string, repo: string): TypeDef[] {
+  const parser = createParser('go');
+  const tree = parser.parse(source);
   const results: TypeDef[] = [];
-  const typePattern = /^\s*type\s+([A-Za-z_]\w*)\s+(struct|interface)\s*\{([\s\S]*?)^\s*\}/gm;
 
-  let match: RegExpExecArray | null;
-  while ((match = typePattern.exec(source)) !== null) {
-    const [, name, kind, body] = match;
-    results.push({
-      name,
-      fields: kind === 'struct' ? extractGoFields(body) : [],
-      source: { repo, file, line: lineNumberForIndex(source, match.index) },
-    });
+  for (const child of tree.rootNode.namedChildren) {
+    if (child.type !== 'type_declaration') continue;
+
+    const typeSpecs = child.namedChildren.filter((node: any) => node.type === 'type_spec');
+    for (const typeSpec of typeSpecs) {
+      const nameNode = typeSpec.childForFieldName('name');
+      const typeNode = typeSpec.childForFieldName('type');
+      if (!nameNode || !typeNode) continue;
+
+      let fields: TypeField[] = [];
+      if (typeNode.type === 'struct_type') {
+        fields = extractGoFields(typeNode);
+      } else if (typeNode.type !== 'interface_type') {
+        continue;
+      }
+
+      results.push({
+        name: nameNode.text,
+        fields,
+        source: { repo, file, line: typeSpec.startPosition.row + 1 },
+      });
+    }
   }
 
   return results;
 }
 
-function extractGoFields(body: string): TypeField[] {
+function extractGoFields(structNode: any): TypeField[] {
+  const body = structNode.descendantsOfType('field_declaration_list')[0];
+  if (!body) return [];
+
   const fields: TypeField[] = [];
+  const declarations = body.namedChildren.filter((node: any) => node.type === 'field_declaration');
 
-  for (const line of body.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('//')) continue;
+  for (const declaration of declarations) {
+    const typeNode = declaration.childForFieldName('type');
+    if (!typeNode) continue;
 
-    const fieldMatch = trimmed.match(/^([A-Za-z_]\w*)\s+([^`/][^`]*)/);
-    if (!fieldMatch) continue;
-
-    fields.push({
-      name: fieldMatch[1],
-      type: fieldMatch[2].trim().replace(/\s+`.*$/, ''),
-      optional: false,
-    });
+    const nameNodes = declaration.children.filter((node: any) => node.type === 'field_identifier');
+    for (const nameNode of nameNodes) {
+      fields.push({
+        name: nameNode.text,
+        type: typeNode.text,
+        optional: false,
+      });
+    }
   }
 
   return fields;
@@ -359,46 +363,56 @@ function extractGoFields(body: string): TypeField[] {
 // ─── Rust Types ─────────────────────────────────────────────────────────────
 
 function extractRustTypes(source: string, file: string, repo: string): TypeDef[] {
+  const parser = createParser('rust');
+  const tree = parser.parse(source);
   const results: TypeDef[] = [];
-  const structPattern = /^\s*(?:pub\s+)?struct\s+([A-Za-z_]\w*)\s*\{([\s\S]*?)^\s*\}/gm;
-  const enumPattern = /^\s*(?:pub\s+)?enum\s+([A-Za-z_]\w*)\s*\{/gm;
 
-  let match: RegExpExecArray | null;
-  while ((match = structPattern.exec(source)) !== null) {
-    results.push({
-      name: match[1],
-      fields: extractRustFields(match[2]),
-      source: { repo, file, line: lineNumberForIndex(source, match.index) },
-    });
-  }
+  for (const child of tree.rootNode.namedChildren) {
+    if (child.type !== 'struct_item' && child.type !== 'enum_item') continue;
 
-  while ((match = enumPattern.exec(source)) !== null) {
+    const nameNode = child.childForFieldName('name');
+    if (!nameNode) continue;
+
     results.push({
-      name: match[1],
-      fields: [],
-      source: { repo, file, line: lineNumberForIndex(source, match.index) },
+      name: nameNode.text,
+      fields: child.type === 'struct_item' ? extractRustFields(child.childForFieldName('body')) : [],
+      source: { repo, file, line: child.startPosition.row + 1 },
     });
   }
 
   return results;
 }
 
-function extractRustFields(body: string): TypeField[] {
+function extractRustFields(body: any): TypeField[] {
+  if (!body) return [];
+
   const fields: TypeField[] = [];
 
-  for (const line of body.split('\n')) {
-    const trimmed = line.trim().replace(/,$/, '');
-    if (!trimmed || trimmed.startsWith('//')) continue;
+  if (body.type === 'field_declaration_list') {
+    const declarations = body.namedChildren.filter((node: any) => node.type === 'field_declaration');
+    for (const declaration of declarations) {
+      const nameNode = declaration.childForFieldName('name');
+      const typeNode = declaration.childForFieldName('type');
+      if (!nameNode || !typeNode) continue;
 
-    const fieldMatch = trimmed.match(/^(?:pub\s+)?([A-Za-z_]\w*)\s*:\s*(.+)$/);
-    if (!fieldMatch) continue;
+      fields.push({
+        name: nameNode.text,
+        type: typeNode.text,
+        optional: isRustOptionalType(typeNode.text),
+      });
+    }
+    return fields;
+  }
 
-    const type = fieldMatch[2].trim();
-    fields.push({
-      name: fieldMatch[1],
-      type,
-      optional: /^Option\s*</.test(type),
-    });
+  if (body.type === 'ordered_field_declaration_list') {
+    const orderedTypes = body.namedChildren.filter((node: any) => node.type !== 'visibility_modifier');
+    for (const [index, typeNode] of orderedTypes.entries()) {
+      fields.push({
+        name: String(index),
+        type: typeNode.text,
+        optional: isRustOptionalType(typeNode.text),
+      });
+    }
   }
 
   return fields;
@@ -407,68 +421,78 @@ function extractRustFields(body: string): TypeField[] {
 // ─── Java Types ─────────────────────────────────────────────────────────────
 
 function extractJavaTypes(source: string, file: string, repo: string): TypeDef[] {
+  const parser = createParser('java');
+  const tree = parser.parse(source);
   const results: TypeDef[] = [];
-  const classPattern =
-    /^\s*(?:public\s+)?(?:abstract\s+|final\s+)?(class|interface|enum|record)\s+([A-Za-z_]\w*)\s*(?:\(([^)]*)\))?\s*\{/gm;
 
-  let match: RegExpExecArray | null;
-  while ((match = classPattern.exec(source)) !== null) {
-    const [, kind, name, recordArgs] = match;
-    const openBraceIndex = classPattern.lastIndex - 1;
-    const closeBraceIndex = findMatchingBrace(source, openBraceIndex);
-    if (closeBraceIndex === -1) continue;
+  for (const child of tree.rootNode.namedChildren) {
+    if (
+      child.type !== 'class_declaration' &&
+      child.type !== 'interface_declaration' &&
+      child.type !== 'enum_declaration' &&
+      child.type !== 'record_declaration'
+    ) {
+      continue;
+    }
 
-    const body = source.slice(openBraceIndex + 1, closeBraceIndex);
+    const nameNode = child.childForFieldName('name');
+    if (!nameNode) continue;
+
     results.push({
-      name,
-      fields: kind === 'record'
-        ? extractJavaRecordFields(recordArgs ?? '')
-        : kind === 'enum'
+      name: nameNode.text,
+      fields: child.type === 'record_declaration'
+        ? extractJavaRecordFields(child.childForFieldName('parameters'))
+        : child.type === 'enum_declaration'
           ? []
-          : extractJavaFields(body),
-      source: { repo, file, line: lineNumberForIndex(source, match.index) },
+          : extractJavaFields(child.childForFieldName('body')),
+      source: { repo, file, line: child.startPosition.row + 1 },
     });
-
-    classPattern.lastIndex = closeBraceIndex + 1;
   }
 
   return results;
 }
 
-function extractJavaFields(body: string): TypeField[] {
-  const fields: TypeField[] = [];
-  const fieldPattern =
-    /^\s*(?:public|private|protected)\s+(?:static\s+|final\s+|volatile\s+|transient\s+)*([A-Za-z0-9_<>\[\], ?]+)\s+([A-Za-z_]\w*)\s*;/gm;
+function extractJavaFields(body: any): TypeField[] {
+  if (!body) return [];
 
-  let match: RegExpExecArray | null;
-  while ((match = fieldPattern.exec(body)) !== null) {
-    fields.push({
-      name: match[2],
-      type: match[1].trim(),
-      optional: false,
-    });
+  const fields: TypeField[] = [];
+
+  const declarations = body.namedChildren.filter((node: any) => node.type === 'field_declaration');
+  for (const declaration of declarations) {
+    const typeNode = declaration.childForFieldName('type');
+    if (!typeNode) continue;
+
+    const declarators = declaration.namedChildren.filter((node: any) => node.type === 'variable_declarator');
+    for (const declarator of declarators) {
+      const nameNode = declarator.childForFieldName('name');
+      if (!nameNode) continue;
+      fields.push({
+        name: nameNode.text,
+        type: typeNode.text,
+        optional: false,
+      });
+    }
   }
 
   return fields;
 }
 
-function extractJavaRecordFields(args: string): TypeField[] {
-  if (!args.trim()) return [];
+function extractJavaRecordFields(parameters: any): TypeField[] {
+  if (!parameters) return [];
 
-  return args
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const tokens = part.split(/\s+/);
-      const name = tokens[tokens.length - 1];
-      const type = tokens.slice(0, -1).join(' ');
+  return parameters.namedChildren
+    .filter((node: any) => node.type === 'formal_parameter')
+    .map((parameter: any) => {
+      const nameNode = parameter.childForFieldName('name');
+      const typeNode = parameter.childForFieldName('type');
+      if (!nameNode || !typeNode) return null;
       return {
-        name,
-        type,
+        name: nameNode.text,
+        type: typeNode.text,
         optional: false,
       };
-    });
+    })
+    .filter((field: TypeField | null): field is TypeField => field !== null);
 }
 
 // ─── Schema Extraction ──────────────────────────────────────────────────────

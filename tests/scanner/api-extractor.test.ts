@@ -97,6 +97,28 @@ class UserService {
     });
   });
 
+  describe('extractExports (Python)', () => {
+    it('extracts public Python functions, classes, and constants', () => {
+      const source = `
+DEBUG = True
+
+def create_app():
+    return None
+
+class Flask:
+    debug: bool
+
+def _hidden():
+    return None
+`;
+      const exports = extractExports(source, 'app.py', 'python');
+      expect(exports.find((entry) => entry.name === 'DEBUG')?.kind).toBe('constant');
+      expect(exports.find((entry) => entry.name === 'create_app')?.kind).toBe('function');
+      expect(exports.find((entry) => entry.name === 'Flask')?.kind).toBe('class');
+      expect(exports.find((entry) => entry.name === '_hidden')).toBeUndefined();
+    });
+  });
+
   describe('extractExports (Go/Rust/Java)', () => {
     it('extracts exported Go functions and structs', () => {
       const source = `
@@ -110,6 +132,29 @@ func GetUser() User {
       const exports = extractExports(source, 'user.go', 'go');
       expect(exports.find((entry) => entry.name === 'User')).toBeDefined();
       expect(exports.find((entry) => entry.name === 'GetUser')?.kind).toBe('function');
+    });
+
+    it('extracts grouped Go declarations and ignores unexported names', () => {
+      const source = `
+type (
+  User struct {
+    ID, Email string
+  }
+  service interface {
+    getUser(id string) User
+  }
+)
+
+func (s *Store) LoadUser(id string) User { return User{} }
+const Version = "1"
+var DefaultName = "demo"
+`;
+      const exports = extractExports(source, 'service.go', 'go');
+      expect(exports.find((entry) => entry.name === 'User')?.kind).toBe('class');
+      expect(exports.find((entry) => entry.name === 'LoadUser')?.kind).toBe('function');
+      expect(exports.find((entry) => entry.name === 'Version')?.kind).toBe('constant');
+      expect(exports.find((entry) => entry.name === 'DefaultName')?.kind).toBe('constant');
+      expect(exports.find((entry) => entry.name === 'service')).toBeUndefined();
     });
 
     it('extracts exported Rust items', () => {
@@ -126,6 +171,23 @@ pub fn get_user() -> User {
       expect(exports.find((entry) => entry.name === 'get_user')?.kind).toBe('function');
     });
 
+    it('extracts public Rust traits, aliases, and constants only', () => {
+      const source = `
+pub trait Store {
+    fn load(&self) -> String;
+}
+
+pub type UserId = String;
+pub const VERSION: &str = "1";
+struct Hidden;
+`;
+      const exports = extractExports(source, 'lib.rs', 'rust');
+      expect(exports.find((entry) => entry.name === 'Store')?.kind).toBe('interface');
+      expect(exports.find((entry) => entry.name === 'UserId')?.kind).toBe('type');
+      expect(exports.find((entry) => entry.name === 'VERSION')?.kind).toBe('constant');
+      expect(exports.find((entry) => entry.name === 'Hidden')).toBeUndefined();
+    });
+
     it('extracts public Java classes and methods', () => {
       const source = `
 public class UserService {
@@ -136,6 +198,27 @@ public class UserService {
       const exports = extractExports(source, 'UserService.java', 'java');
       expect(exports.find((entry) => entry.name === 'UserService')).toBeDefined();
       expect(exports.find((entry) => entry.name === 'getUser')?.kind).toBe('function');
+    });
+
+    it('extracts Java interface methods and public constants while ignoring private methods', () => {
+      const source = `
+public interface Store {
+    String getName();
+}
+
+public class UserService {
+    public static final String VERSION = "1";
+    public String getUser() {
+        return "ok";
+    }
+    private void helper() {}
+}
+`;
+      const exports = extractExports(source, 'UserService.java', 'java');
+      expect(exports.find((entry) => entry.name === 'Store')?.kind).toBe('interface');
+      expect(exports.find((entry) => entry.name === 'getName')?.kind).toBe('function');
+      expect(exports.find((entry) => entry.name === 'VERSION')?.kind).toBe('constant');
+      expect(exports.find((entry) => entry.name === 'helper')).toBeUndefined();
     });
   });
 
@@ -207,6 +290,35 @@ export async function fetchUsers() {
 }`;
     const results = extractScriptApiCallSites(source, 'src/client.ts');
     expect(results.some((entry) => entry.signature === '/api/users')).toBe(true);
+  });
+
+  it('ignores non-API absolute URLs in TypeScript string literals', () => {
+    const source = `
+const moduleUrl = "https://deno.land/x/hono@v4.0.0/mod.ts";
+const docsUrl = "https://example.com/docs/getting-started";
+`;
+    const results = extractScriptApiCallSites(source, 'src/client.ts');
+    expect(results).toEqual([]);
+  });
+
+  it('ignores standalone API-like string literals that are not request calls', () => {
+    const source = `
+const path = "/api/users";
+const nested = { url: "/api/admin" };
+`;
+    const results = extractScriptApiCallSites(source, 'src/client.ts');
+    expect(results).toEqual([]);
+  });
+
+  it('ignores commented route examples in TypeScript files', () => {
+    const source = `
+/**
+ * app.get('/api/page', () => {})
+ */
+// fetch('/api/users')
+`;
+    const results = extractScriptApiCallSites(source, 'src/client.ts');
+    expect(results).toEqual([]);
   });
 
   it('extracts URL path strings from Swift source', () => {

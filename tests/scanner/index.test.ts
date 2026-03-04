@@ -144,6 +144,7 @@ export type User = z.infer<typeof userSchema>;
 
     // From router.ts
     expect(exportNames).toContain('ApiResponse');
+    expect(exportNames).not.toContain('/api/users');
   });
 
   it('extracts routes', () => {
@@ -212,6 +213,28 @@ export type User = z.infer<typeof userSchema>;
     const allFiles = manifest.apiSurface.exports.map((e) => e.file);
     const hasNodeModules = allFiles.some((f) => f.includes('node_modules'));
     expect(hasNodeModules).toBe(false);
+  });
+
+  it('skips test and example files when scanning API surface', () => {
+    fs.mkdirSync(path.join(tmpDir, 'tests'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'examples'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'tests', 'router.test.ts'),
+      `export function testOnly() {}\nconst app = { get: (..._args: unknown[]) => undefined };\napp.get('/api/test-only', () => null);\n`,
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'examples', 'demo.ts'),
+      `export const exampleOnly = true;\nconst app = { get: (..._args: unknown[]) => undefined };\napp.get('/api/example-only', () => null);\n`,
+    );
+
+    const manifest = scanRepo(config);
+    const exportNames = manifest.apiSurface.exports.map((entry) => entry.name);
+    const routePaths = manifest.apiSurface.routes.map((entry) => entry.path);
+
+    expect(exportNames).not.toContain('testOnly');
+    expect(exportNames).not.toContain('exampleOnly');
+    expect(routePaths).not.toContain('/api/test-only');
+    expect(routePaths).not.toContain('/api/example-only');
   });
 });
 

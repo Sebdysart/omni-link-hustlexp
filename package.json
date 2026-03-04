@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "benchmark:smoke": "node scripts/benchmark-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
