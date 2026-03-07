@@ -51,6 +51,35 @@ function createDeps(overrides: Partial<CliDeps> = {}): CliDeps {
   const config = makeConfig();
 
   return {
+    apply: vi.fn(async () => ({
+      executed: false,
+      branches: [],
+      pullRequestCreated: false,
+      warnings: [],
+    })),
+    reviewPr: vi.fn(async () => ({
+      generatedAt: new Date(0).toISOString(),
+      baseRef: 'main',
+      headRef: 'HEAD',
+      affectedRepos: [],
+      impact: [],
+      contractMismatches: [],
+      owners: [],
+      risk: {
+        overallRisk: 'low',
+        score: 0,
+        reasons: [],
+        affectedRepos: [],
+        blockedByPolicy: false,
+      },
+      policyDecisions: [],
+    })),
+    rollback: vi.fn(async () => ({
+      executed: false,
+      branches: [],
+      pullRequestCreated: false,
+      warnings: [],
+    })),
     scan: vi.fn(async () => ({
       manifests: [],
       graph: {
@@ -68,6 +97,15 @@ function createDeps(overrides: Partial<CliDeps> = {}): CliDeps {
         markdown: '# OMNI-LINK ECOSYSTEM STATE',
       },
     })),
+    watch: vi.fn(async () => ({
+      running: true,
+      updatedAt: new Date(0).toISOString(),
+      repoCount: 1,
+      dirtyRepos: [],
+      statePath: '/tmp/daemon-state.json',
+    })),
+    owners: vi.fn(async () => ({ owners: [], perRepo: {} })),
+    impactFromRefs: vi.fn(async () => [{ repo: 'repo', file: 'src/ref.ts' }]),
     impactFromUncommitted: vi.fn(async () => [{ repo: 'repo', file: 'src/index.ts' }]),
     health: vi.fn(async () => ({ overall: 82, perRepo: { repo: { overall: 82 } } })),
     evolve: vi.fn(async () => [{ id: 'upgrade-1', title: 'Add pagination' }]),
@@ -84,6 +122,9 @@ describe('engine/cli-app parseArgs', () => {
       command: 'scan',
       configPath: './test.json',
       outputFormat: 'markdown',
+      baseRef: undefined,
+      headRef: undefined,
+      once: false,
       help: false,
     });
   });

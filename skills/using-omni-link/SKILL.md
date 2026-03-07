@@ -53,7 +53,7 @@ Invoke these skills based on the trigger conditions described:
 
 ## Max-Tier Anti-Hallucination Mode
 
-omni-link v0.3.0 introduces structural anti-hallucination safeguards across all layers:
+omni-link v1.0.0 introduces structural anti-hallucination safeguards across all layers:
 
 ### Agent Prompts
 

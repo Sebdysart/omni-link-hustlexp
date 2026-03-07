@@ -15,6 +15,7 @@ omni-link scans up to 10 repositories, builds an ecosystem graph of API contract
 - **Multi-repo scanning** -- Tree-sitter-powered parsing of TypeScript, TSX, Swift, Python, Go, Rust, Java, JavaScript, and GraphQL-aware file detection
 - **API contract mapping** -- Detects routes, tRPC procedures, and consumer references across repos
 - **Type lineage tracking** -- Finds shared concepts (e.g., `User` in backend, `UserDTO` in iOS) via name matching and field similarity
+- **Semantic accuracy layer** -- Optional TypeScript compiler-backed analysis overlays parser results with provenance and confidence
 - **Contract mismatch detection** -- Identifies breaking, warning, and info-level type divergences
 - **Context digest** -- Token-budgeted markdown summary injected at session start with Mermaid architecture diagrams
 - **Ignore-aware scanning** -- Honors `.gitignore` and `.claudeignore` during repo walks
@@ -23,6 +24,10 @@ omni-link scans up to 10 repositories, builds an ecosystem graph of API contract
 - **Evolution engine** -- Gap analysis, bottleneck detection, competitive benchmarking, and ranked upgrade proposals
 - **Impact analysis** -- Traces ripple effects of changes across the entire ecosystem
 - **Health scoring** -- Per-repo and overall ecosystem health metrics
+- **Ownership and policy engine** -- Resolves owners, evaluates branch/risk policies, and gates bounded execution
+- **Daemon-backed watch mode** -- Maintains warm ecosystem state for faster repeated analysis
+- **PR review artifacts** -- Generates branch-aware review output with risk, impact, owners, and execution planning
+- **Bounded automation** -- Produces branch/PR-oriented execution plans with rollback instructions and dry-run defaults
 
 ## Installation
 
@@ -79,6 +84,34 @@ Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` fo
   "cache": {
     "directory": "~/.claude/omni-link-cache",
     "maxAgeDays": 7
+  },
+  "daemon": {
+    "enabled": true,
+    "preferDaemon": true,
+    "statePath": "~/.claude/omni-link-daemon-state.sqlite"
+  },
+  "ownership": {
+    "enabled": true,
+    "defaultOwner": "platform-team",
+    "rules": [{ "owner": "backend-team", "kind": "team", "scope": "repo", "repo": "my-backend" }]
+  },
+  "runtime": {
+    "enabled": true,
+    "coverageSummaryPath": "coverage/coverage-summary.json",
+    "testResultsPath": "test-results.json"
+  },
+  "policies": {
+    "enabled": true,
+    "protectedBranches": ["main"],
+    "maxAllowedRisk": "high",
+    "forbidDirectMainMutation": true
+  },
+  "maxTier": {
+    "enabled": true,
+    "semanticAnalysis": {
+      "enabled": true,
+      "preferSemantic": true
+    }
   }
 }
 ```
@@ -102,6 +135,12 @@ Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` fo
 | `context`   | `includeRecentCommits`     | number                                                                                | `20`                        | How many recent commits to include                           |
 | `cache`     | `directory`                | string                                                                                | `~/.claude/omni-link-cache` | Cache directory path                                         |
 | `cache`     | `maxAgeDays`               | number                                                                                | `7`                         | Cache TTL in days                                            |
+| `daemon`    | `enabled` / `preferDaemon` | booleans                                                                              | `false`                     | Enable warm graph state and prefer daemon-backed reads       |
+| `daemon`    | `statePath`                | string                                                                                | cache-relative path         | Persistent SQLite daemon state file                          |
+| `ownership` | `defaultOwner` / `rules[]` | owner mappings by repo, path, API, or package                                         | disabled                    | Resolve ownership across repos and API surfaces              |
+| `runtime`   | artifact paths             | strings                                                                               | disabled                    | Ingest coverage, test, OpenAPI, GraphQL, telemetry artifacts |
+| `policies`  | branch/risk rules          | arrays + booleans + risk threshold                                                    | disabled                    | Gate execution and protected-branch behavior                 |
+| `maxTier`   | semantic / execution flags | booleans + thresholds                                                                 | disabled                    | Enable semantic accuracy and max-tier platform modules       |
 
 ## Skills
 
@@ -124,12 +163,17 @@ Skills are contextual instructions that guide Claude Code's behavior within the 
 
 Commands are slash commands available in Claude Code.
 
-| Command   | Description                                               |
-| --------- | --------------------------------------------------------- |
-| `/scan`   | Force a full ecosystem rescan across all configured repos |
-| `/impact` | Analyze cross-repo impact of uncommitted changes          |
-| `/health` | Run a full ecosystem health audit with per-repo scores    |
-| `/evolve` | Generate ranked evolution suggestions with evidence       |
+| Command      | Description                                                         |
+| ------------ | ------------------------------------------------------------------- |
+| `/scan`      | Force a full ecosystem rescan across all configured repos           |
+| `/impact`    | Analyze cross-repo impact of uncommitted changes or branch diffs    |
+| `/health`    | Run a full ecosystem health audit with per-repo scores              |
+| `/evolve`    | Generate ranked evolution suggestions with evidence                 |
+| `/watch`     | Refresh or maintain daemon-backed ecosystem state                   |
+| `/owners`    | Resolve ownership assignments across repos and APIs                 |
+| `/review-pr` | Generate a PR review artifact with risk, owners, and execution plan |
+| `/apply`     | Apply the bounded execution plan on generated branches/PRs          |
+| `/rollback`  | Roll back the last generated execution plan                         |
 
 ## Agents
 
@@ -225,12 +269,14 @@ npm run format:check
 
 ```bash
 npm run verify
+npm run verify:max
 ```
 
 ### CLI smoke test
 
 ```bash
 npm run smoke:cli
+npm run smoke:max
 ```
 
 ### CLI
@@ -242,6 +288,11 @@ node dist/cli.js scan --markdown --config .omni-link.json
 node dist/cli.js health --config .omni-link.json
 node dist/cli.js evolve --config .omni-link.json
 node dist/cli.js impact --config .omni-link.json
+node dist/cli.js watch --once --config .omni-link.json
+node dist/cli.js owners --config .omni-link.json
+node dist/cli.js review-pr --base main --head HEAD --config .omni-link.json
+node dist/cli.js apply --base main --head HEAD --config .omni-link.json
+node dist/cli.js rollback --config .omni-link.json
 ```
 
 ### Releases
@@ -263,7 +314,7 @@ omni-link/
     index.ts        # Pipeline orchestrator
     cli.ts          # CLI entry point
   skills/           # 10 Claude Code skills
-  commands/         # 4 slash commands
+  commands/         # Slash command docs
   agents/           # 3 specialized agents
   hooks/            # Session-start hook
   tests/            # Test suite (277+ tests)

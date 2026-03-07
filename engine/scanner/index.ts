@@ -6,6 +6,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import type {
+  InternalDep,
+  OmniLinkConfig,
   RepoConfig,
   RepoManifest,
   CommitSummary,
@@ -17,6 +19,7 @@ import type {
   PackageDep,
   HealthScore,
   FileScanResult,
+  SymbolReference,
 } from '../types.js';
 
 /**
@@ -49,6 +52,11 @@ import { extractTypes, extractSchemas } from './type-extractor.js';
 import { detectConventions } from './convention-detector.js';
 import type { FileInfo } from './convention-detector.js';
 import { createGitignoreResolver } from './gitignore-resolver.js';
+import { analyzeRepoSemantics } from '../analyzers/index.js';
+
+export interface ScanRepoOptions {
+  config?: OmniLinkConfig;
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -110,6 +118,7 @@ export async function scanRepo(
   config: RepoConfig,
   fileCache?: FileCache,
   manifestCache?: CacheManager,
+  scanOptions?: ScanRepoOptions,
 ): Promise<RepoManifest> {
   const { name, path: repoPath, language } = config;
 
@@ -133,6 +142,7 @@ export async function scanRepo(
 
   // 1. Walk and collect supported files
   const filePaths = await walkDirectory(repoPath);
+  const semanticSelection = await analyzeRepoSemantics(config, filePaths, scanOptions?.config);
 
   // 2. Parse each file and extract everything
   const allExports: ExportDef[] = [];
@@ -140,6 +150,8 @@ export async function scanRepo(
   const allProcedures: ProcedureDef[] = [];
   const allTypes: TypeDef[] = [];
   const allSchemas: SchemaDef[] = [];
+  const allInternalDeps: InternalDep[] = [];
+  const allSymbolReferences: SymbolReference[] = [];
   const sourceSnippets: string[] = [];
   const fileInfos: FileInfo[] = [];
 
@@ -164,6 +176,9 @@ export async function scanRepo(
     let procedures: ProcedureDef[];
     let types: TypeDef[];
     let schemas: SchemaDef[];
+    let imports: InternalDep[];
+    let symbolReferences: SymbolReference[];
+    const semanticResult = semanticSelection.analysis?.files.get(relPath);
 
     if (fileCache !== undefined) {
       const sha1 = crypto.createHash('sha1').update(source).digest('hex');
@@ -176,34 +191,124 @@ export async function scanRepo(
         procedures = cached.result.procedures;
         types = cached.result.types;
         schemas = cached.result.schemas;
+        imports = cached.result.imports;
+        symbolReferences = cached.result.symbolReferences ?? [];
       } else {
-        // Cache miss or stale — parse and store
-        exports = extractExports(source, relPath, lang);
-        routes = extractRoutes(source, relPath, lang);
-        procedures = extractProcedures(source, relPath, lang);
-        types = extractTypes(source, relPath, lang, name);
-        schemas = extractSchemas(source, relPath, lang, name);
+        const parserExports = extractExports(source, relPath, lang);
+        const parserRoutes = extractRoutes(source, relPath, lang);
+        const parserProcedures = extractProcedures(source, relPath, lang);
+        const parserTypes = extractTypes(source, relPath, lang, name);
+        const parserSchemas = extractSchemas(source, relPath, lang, name);
+        const parserImports: InternalDep[] = [];
+        const parserSymbolReferences: SymbolReference[] = [];
+
+        exports = mergeArtifacts(
+          parserExports,
+          semanticResult?.exports ?? [],
+          semanticSelection.preferSemantic,
+          (entry) => `${entry.kind}:${entry.name}:${entry.file}:${entry.line}`,
+        );
+        routes = mergeArtifacts(
+          parserRoutes,
+          semanticResult?.routes ?? [],
+          semanticSelection.preferSemantic,
+          (entry) => `${entry.method}:${entry.path}:${entry.file}:${entry.line}`,
+        );
+        procedures = mergeArtifacts(
+          parserProcedures,
+          semanticResult?.procedures ?? [],
+          semanticSelection.preferSemantic,
+          (entry) => `${entry.kind}:${entry.name}:${entry.file}:${entry.line}`,
+        );
+        types = mergeArtifacts(
+          parserTypes,
+          semanticResult?.types ?? [],
+          semanticSelection.preferSemantic,
+          (entry) => `${entry.name}:${entry.source.file}:${entry.source.line}`,
+        );
+        schemas = mergeArtifacts(
+          parserSchemas,
+          semanticResult?.schemas ?? [],
+          semanticSelection.preferSemantic,
+          (entry) => `${entry.name}:${entry.source.file}:${entry.source.line}`,
+        );
+        imports = mergeArtifacts(
+          parserImports,
+          semanticResult?.imports ?? [],
+          true,
+          (entry) => `${entry.from}:${entry.to}:${entry.imports.join(',')}`,
+        );
+        symbolReferences = mergeArtifacts(
+          parserSymbolReferences,
+          semanticResult?.symbolReferences ?? [],
+          true,
+          (entry) =>
+            `${entry.kind}:${entry.name}:${entry.fromFile}:${entry.toFile ?? ''}:${entry.line}`,
+        );
 
         const result: FileScanResult = {
           filePath,
           sha: sha1,
           scannedAt: new Date().toISOString(),
           exports,
-          imports: [], // Cross-file import resolution is done by the grapher
+          imports,
           types,
           schemas,
           routes,
           procedures,
+          symbolReferences,
         };
         fileCache.set(filePath, { sha1, result });
       }
     } else {
-      // No cache provided — parse unconditionally (original behaviour)
-      exports = extractExports(source, relPath, lang);
-      routes = extractRoutes(source, relPath, lang);
-      procedures = extractProcedures(source, relPath, lang);
-      types = extractTypes(source, relPath, lang, name);
-      schemas = extractSchemas(source, relPath, lang, name);
+      const parserExports = extractExports(source, relPath, lang);
+      const parserRoutes = extractRoutes(source, relPath, lang);
+      const parserProcedures = extractProcedures(source, relPath, lang);
+      const parserTypes = extractTypes(source, relPath, lang, name);
+      const parserSchemas = extractSchemas(source, relPath, lang, name);
+      exports = mergeArtifacts(
+        parserExports,
+        semanticResult?.exports ?? [],
+        semanticSelection.preferSemantic,
+        (entry) => `${entry.kind}:${entry.name}:${entry.file}:${entry.line}`,
+      );
+      routes = mergeArtifacts(
+        parserRoutes,
+        semanticResult?.routes ?? [],
+        semanticSelection.preferSemantic,
+        (entry) => `${entry.method}:${entry.path}:${entry.file}:${entry.line}`,
+      );
+      procedures = mergeArtifacts(
+        parserProcedures,
+        semanticResult?.procedures ?? [],
+        semanticSelection.preferSemantic,
+        (entry) => `${entry.kind}:${entry.name}:${entry.file}:${entry.line}`,
+      );
+      types = mergeArtifacts(
+        parserTypes,
+        semanticResult?.types ?? [],
+        semanticSelection.preferSemantic,
+        (entry) => `${entry.name}:${entry.source.file}:${entry.source.line}`,
+      );
+      schemas = mergeArtifacts(
+        parserSchemas,
+        semanticResult?.schemas ?? [],
+        semanticSelection.preferSemantic,
+        (entry) => `${entry.name}:${entry.source.file}:${entry.source.line}`,
+      );
+      imports = mergeArtifacts(
+        [],
+        semanticResult?.imports ?? [],
+        true,
+        (entry) => `${entry.from}:${entry.to}:${entry.imports.join(',')}`,
+      );
+      symbolReferences = mergeArtifacts(
+        [],
+        semanticResult?.symbolReferences ?? [],
+        true,
+        (entry) =>
+          `${entry.kind}:${entry.name}:${entry.fromFile}:${entry.toFile ?? ''}:${entry.line}`,
+      );
     }
     // ────────────────────────────────────────────────────────────────────
 
@@ -230,6 +335,8 @@ export async function scanRepo(
     allProcedures.push(...procedures);
     allTypes.push(...types);
     allSchemas.push(...schemas);
+    allInternalDeps.push(...imports);
+    allSymbolReferences.push(...symbolReferences);
 
     // Collect for convention detection
     fileInfos.push({
@@ -285,9 +392,35 @@ export async function scanRepo(
       testingPatterns: conventions.testingPatterns,
     },
     dependencies: {
-      internal: [], // Internal deps require cross-file import resolution (done by grapher)
+      internal: dedupeInternalDeps(allInternalDeps),
       external: externalDeps,
     },
+    symbolReferences: dedupeSymbolReferences(allSymbolReferences),
+    sourceKind: semanticSelection.analysis ? 'mixed' : 'parser',
+    confidence: semanticSelection.analysis ? 0.82 : 0.7,
+    provenance: semanticSelection.analysis
+      ? [
+          {
+            sourceKind: 'parser',
+            adapter: 'tree-sitter',
+            detail: 'baseline scanner',
+            confidence: 0.7,
+          },
+          {
+            sourceKind: 'semantic',
+            adapter: semanticSelection.analysis.adapter,
+            detail: 'semantic analyzer overlay',
+            confidence: 0.92,
+          },
+        ]
+      : [
+          {
+            sourceKind: 'parser',
+            adapter: 'tree-sitter',
+            detail: 'baseline scanner',
+            confidence: 0.7,
+          },
+        ],
     health,
   };
 
@@ -527,4 +660,62 @@ function countTodos(sourceSnippets: string[]): number {
     if (matches) count += matches.length;
   }
   return count;
+}
+
+function mergeArtifacts<T>(
+  parserArtifacts: T[],
+  semanticArtifacts: T[],
+  preferSemantic: boolean,
+  keyFn: (entry: T) => string,
+): T[] {
+  const primary = preferSemantic ? semanticArtifacts : parserArtifacts;
+  const secondary = preferSemantic ? parserArtifacts : semanticArtifacts;
+  const merged = new Map<string, T>();
+
+  for (const entry of primary) {
+    merged.set(keyFn(entry), entry);
+  }
+
+  for (const entry of secondary) {
+    const key = keyFn(entry);
+    if (!merged.has(key)) {
+      merged.set(key, entry);
+    }
+  }
+
+  return [...merged.values()];
+}
+
+function dedupeInternalDeps(deps: InternalDep[]): InternalDep[] {
+  const merged = new Map<string, InternalDep>();
+
+  for (const dep of deps) {
+    const key = `${dep.from}:${dep.to}`;
+    const existing = merged.get(key);
+    if (existing) {
+      for (const imported of dep.imports) {
+        if (!existing.imports.includes(imported)) {
+          existing.imports.push(imported);
+        }
+      }
+      continue;
+    }
+
+    merged.set(key, { ...dep, imports: [...dep.imports] });
+  }
+
+  return [...merged.values()];
+}
+
+function dedupeSymbolReferences(references: SymbolReference[]): SymbolReference[] {
+  const merged = new Map<string, SymbolReference>();
+
+  for (const reference of references) {
+    const key = `${reference.kind}:${reference.name}:${reference.fromFile}:${reference.toFile ?? ''}:${reference.line}`;
+    if (!merged.has(key)) {
+      merged.set(key, reference);
+    }
+  }
+
+  return [...merged.values()];
 }

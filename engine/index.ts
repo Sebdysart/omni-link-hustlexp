@@ -1,36 +1,64 @@
 // engine/index.ts — Top-level orchestrator: wires scanner -> grapher -> context -> evolution -> quality
 
 import type {
-  OmniLinkConfig,
-  RepoManifest,
-  EcosystemGraph,
+  DaemonStatus,
   EcosystemDigest,
+  EcosystemGraph,
+  ExecutionPlan,
   ImpactPath,
+  OmniLinkConfig,
+  OwnerAssignment,
+  RepoManifest,
+  ReviewArtifact,
   EvolutionSuggestion,
 } from './types.js';
 import pLimit from 'p-limit';
 
-import { scanRepo } from './scanner/index.js';
-import type { FileCache } from './scanner/index.js';
-import { CacheManager } from './context/cache-manager.js';
-import { buildEcosystemGraph } from './grapher/index.js';
-import { buildContext } from './context/index.js';
-import { analyzeEvolution } from './evolution/index.js';
 import { analyzeImpact } from './grapher/impact-analyzer.js';
-import { checkReferences } from './quality/reference-checker.js';
-import { validateConventions } from './quality/convention-validator.js';
+import { buildEcosystemGraph } from './grapher/index.js';
+import { CacheManager } from './context/cache-manager.js';
+import { buildContext } from './context/index.js';
+import {
+  updateDaemonState,
+  loadDaemonState,
+  saveDaemonState,
+  watchEcosystem,
+} from './daemon/index.js';
+import { analyzeEvolution } from './evolution/index.js';
+import {
+  applyExecutionPlan,
+  attachExecutionPlan,
+  createExecutionPlan,
+  rollbackExecutionPlan,
+  type ExecutionResult,
+} from './execution/index.js';
+import { attachOwnersToGraph } from './ownership/index.js';
+import { evaluatePolicies } from './policy/index.js';
 import { detectSlop } from './quality/slop-detector.js';
+import { validateConventions } from './quality/convention-validator.js';
 import { scoreEcosystemHealth } from './quality/health-scorer.js';
+import { checkReferences } from './quality/reference-checker.js';
 import { checkRules } from './quality/rule-engine.js';
 import { assertNotSimulateOnly } from './quality/simulate-guard.js';
-export { SimulateOnlyError } from './quality/simulate-guard.js';
+import {
+  createReviewArtifact,
+  gitChangedFilesBetween,
+  loadReviewArtifact,
+  mergeRiskReports,
+  saveReviewArtifact,
+  scoreRisk,
+} from './review/index.js';
+import { attachRuntimeSignals, rankEvolutionSuggestions } from './runtime/index.js';
+import { scanRepo } from './scanner/index.js';
+import type { FileCache } from './scanner/index.js';
 import type { HealthScoreResult } from './quality/health-scorer.js';
 import type { ReferenceCheckResult } from './quality/reference-checker.js';
 import type { ConventionCheckResult } from './quality/convention-validator.js';
 import type { SlopCheckResult } from './quality/slop-detector.js';
 import type { RuleCheckResult } from './quality/rule-engine.js';
 
-// Re-export types that callers need
+export { SimulateOnlyError } from './quality/simulate-guard.js';
+
 export type {
   OmniLinkConfig,
   RepoManifest,
@@ -43,14 +71,33 @@ export type {
   ConventionCheckResult,
   SlopCheckResult,
   RuleCheckResult,
+  ReviewArtifact,
+  OwnerAssignment,
+  DaemonStatus,
+  ExecutionPlan,
 };
-
-// ---- Scan Pipeline ----
 
 export interface ScanResult {
   manifests: RepoManifest[];
   graph: EcosystemGraph;
   context: { digest: EcosystemDigest; markdown: string };
+}
+
+export interface HealthResult {
+  perRepo: Record<string, HealthScoreResult>;
+  overall: number;
+}
+
+export interface QualityCheckResult {
+  references: ReferenceCheckResult;
+  conventions: ConventionCheckResult;
+  slop: SlopCheckResult;
+  rules: RuleCheckResult;
+}
+
+export interface OwnersResult {
+  owners: OwnerAssignment[];
+  perRepo: Record<string, OwnerAssignment[]>;
 }
 
 const DEFAULT_SCAN_CONCURRENCY = 4;
@@ -67,120 +114,184 @@ async function scanConfiguredRepos(config: OmniLinkConfig): Promise<RepoManifest
 
   const limit = pLimit(DEFAULT_SCAN_CONCURRENCY);
   return Promise.all(
-    config.repos.map((repo) => limit(() => scanRepo(repo, fileCache, manifestCache))),
+    config.repos.map((repo) => limit(() => scanRepo(repo, fileCache, manifestCache, { config }))),
   );
 }
 
-/**
- * Full pipeline: scan all repos -> build graph -> build context digest.
- */
-export async function scan(config: OmniLinkConfig): Promise<ScanResult> {
-  assertNotSimulateOnly(config, 'scan');
+function enrichGraph(graph: EcosystemGraph, config: OmniLinkConfig): EcosystemGraph {
+  return attachRuntimeSignals(attachOwnersToGraph(graph, config), config);
+}
+
+async function scanLive(config: OmniLinkConfig): Promise<ScanResult> {
   const manifests = await scanConfiguredRepos(config);
-
-  // 2. Build the ecosystem graph from all manifests
-  const graph = buildEcosystemGraph(manifests);
-
-  // 3. Build the context digest
+  const graph = enrichGraph(buildEcosystemGraph(manifests), config);
   const context = buildContext(graph, config);
-
   return { manifests, graph, context };
 }
 
-// ---- Impact Analysis ----
+async function loadScanResult(config: OmniLinkConfig): Promise<ScanResult> {
+  if (config.daemon?.enabled && config.daemon.preferDaemon) {
+    const state = await loadDaemonState(config);
+    if (state) {
+      return {
+        manifests: state.manifests,
+        graph: state.graph,
+        context: state.context,
+      };
+    }
+  }
 
-/**
- * Analyze the impact of changed files across the ecosystem.
- * Scans repos, builds graph, then runs impact analysis on the provided changes.
- */
+  const result = await scanLive(config);
+  if (config.daemon?.enabled) {
+    await saveDaemonState(config, {
+      updatedAt: new Date().toISOString(),
+      configSha: result.context.digest.configSha,
+      manifests: result.manifests,
+      graph: result.graph,
+      context: result.context,
+      dirtyRepos: [],
+    });
+  }
+
+  return result;
+}
+
+export async function scan(config: OmniLinkConfig): Promise<ScanResult> {
+  assertNotSimulateOnly(config, 'scan');
+  return loadScanResult(config);
+}
+
 export async function impact(
   config: OmniLinkConfig,
   changedFiles: Array<{ repo: string; file: string; change: string }>,
 ): Promise<ImpactPath[]> {
   assertNotSimulateOnly(config, 'impact');
-  const manifests = await scanConfiguredRepos(config);
-  const graph = buildEcosystemGraph(manifests);
-  return analyzeImpact(graph, changedFiles);
+  const result = await loadScanResult(config);
+  return analyzeImpact(result.graph, changedFiles);
 }
 
-/**
- * Analyze the impact of all uncommitted changes detected across repos.
- * Auto-detects changed files from each repo's git state so callers do not
- * need to supply the changed-file list explicitly.
- *
- * Intended for CLI use where the user wants to know "what does my current
- * working-tree change break across the ecosystem?"
- */
 export async function impactFromUncommitted(config: OmniLinkConfig): Promise<ImpactPath[]> {
   assertNotSimulateOnly(config, 'impact');
-  const manifests = await scanConfiguredRepos(config);
-  const graph = buildEcosystemGraph(manifests);
-  // Collect every uncommitted file from every repo's git state
-  const changedFiles = manifests.flatMap((m) =>
-    m.gitState.uncommittedChanges.map((file) => ({
-      repo: m.repoId,
+  const result = await loadScanResult(config);
+  const changedFiles = result.manifests.flatMap((manifest) =>
+    manifest.gitState.uncommittedChanges.map((file) => ({
+      repo: manifest.repoId,
       file,
       change: 'uncommitted' as const,
     })),
   );
-  return analyzeImpact(graph, changedFiles);
+  return analyzeImpact(result.graph, changedFiles);
 }
 
-// ---- Health Scoring ----
-
-export interface HealthResult {
-  perRepo: Record<string, HealthScoreResult>;
-  overall: number;
+export async function impactFromRefs(
+  config: OmniLinkConfig,
+  baseRef: string,
+  headRef: string,
+): Promise<ImpactPath[]> {
+  assertNotSimulateOnly(config, 'impact');
+  const result = await loadScanResult(config);
+  const changedFiles = gitChangedFilesBetween(config, baseRef, headRef);
+  return analyzeImpact(result.graph, changedFiles);
 }
 
-/**
- * Compute per-repo and ecosystem-wide health scores.
- */
 export async function health(config: OmniLinkConfig): Promise<HealthResult> {
   assertNotSimulateOnly(config, 'health');
-  const manifests = await scanConfiguredRepos(config);
-  const graph = buildEcosystemGraph(manifests);
-  return scoreEcosystemHealth(graph);
+  const result = await loadScanResult(config);
+  return scoreEcosystemHealth(result.graph);
 }
 
-// ---- Evolution Suggestions ----
-
-/**
- * Run the evolution analysis pipeline: gaps, bottlenecks, benchmarks -> ranked suggestions.
- */
 export async function evolve(config: OmniLinkConfig): Promise<EvolutionSuggestion[]> {
   assertNotSimulateOnly(config, 'evolve');
-  const manifests = await scanConfiguredRepos(config);
-  const graph = buildEcosystemGraph(manifests);
-  return analyzeEvolution(graph, config);
+  const result = await loadScanResult(config);
+  return rankEvolutionSuggestions(analyzeEvolution(result.graph, config), result.graph);
 }
 
-// ---- Quality Check ----
-
-export interface QualityCheckResult {
-  references: ReferenceCheckResult;
-  conventions: ConventionCheckResult;
-  slop: SlopCheckResult;
-  rules: RuleCheckResult;
+export async function watch(
+  config: OmniLinkConfig,
+  options: { once?: boolean } = {},
+): Promise<DaemonStatus> {
+  return watchEcosystem(config, options);
 }
 
-/**
- * Run all quality checks (reference validation, convention enforcement, slop detection)
- * against proposed code for a specific file in a specific repo.
- *
- * If no matching repo manifest is found, returns clean results for all checks.
- */
+export async function owners(config: OmniLinkConfig): Promise<OwnersResult> {
+  const result = await loadScanResult(config);
+  return {
+    owners: result.graph.owners ?? [],
+    perRepo: Object.fromEntries(
+      result.graph.repos.map((manifest) => [manifest.repoId, manifest.owners ?? []]),
+    ),
+  };
+}
+
+export async function reviewPr(
+  config: OmniLinkConfig,
+  baseRef: string = config.github?.defaultBaseBranch ?? 'main',
+  headRef = 'HEAD',
+): Promise<ReviewArtifact> {
+  const result = await loadScanResult(config);
+  const changedFiles = gitChangedFilesBetween(config, baseRef, headRef);
+  const impactPaths = analyzeImpact(result.graph, changedFiles);
+  const reviewGraph: EcosystemGraph = {
+    ...result.graph,
+    impactPaths,
+  };
+  const owners = reviewGraph.owners ?? [];
+  const risk = scoreRisk(reviewGraph);
+  const executionPlan = createExecutionPlan(config, reviewGraph, risk, owners);
+  const policyDecisions = evaluatePolicies(config, executionPlan.baseBranch, risk, owners);
+  const artifact = attachExecutionPlan(
+    createReviewArtifact(
+      reviewGraph,
+      baseRef,
+      headRef,
+      owners,
+      mergeRiskReports(risk, executionPlan.blocked),
+    ),
+    {
+      ...executionPlan,
+      policyDecisions,
+      risk: mergeRiskReports(risk, executionPlan.blocked),
+    },
+  );
+  saveReviewArtifact(config, artifact);
+  return artifact;
+}
+
+export async function apply(
+  config: OmniLinkConfig,
+  baseRef: string = config.github?.defaultBaseBranch ?? 'main',
+  headRef = 'HEAD',
+): Promise<ExecutionResult> {
+  const existingArtifact = loadReviewArtifact(config);
+  const artifact =
+    existingArtifact?.executionPlan !== undefined
+      ? existingArtifact
+      : await reviewPr(config, baseRef, headRef);
+
+  if (!artifact.executionPlan) {
+    throw new Error('No execution plan available. Run review-pr first.');
+  }
+
+  return applyExecutionPlan(config, artifact.executionPlan);
+}
+
+export async function rollback(config: OmniLinkConfig): Promise<ExecutionResult> {
+  const artifact = loadReviewArtifact(config);
+  if (!artifact?.executionPlan) {
+    throw new Error('No execution plan artifact found to roll back.');
+  }
+
+  return rollbackExecutionPlan(config, artifact.executionPlan);
+}
+
 export async function qualityCheck(
   code: string,
   file: string,
   config: OmniLinkConfig,
 ): Promise<QualityCheckResult> {
   assertNotSimulateOnly(config, 'qualityCheck');
-  // Find the repo this file belongs to (match by path prefix or repo name)
   const manifests = await scanConfiguredRepos(config);
-
-  // Use the first manifest by default, or find by repo path in filename
-  const manifest = manifests.find((m) => file.startsWith(m.path)) ?? manifests[0];
+  const manifest = manifests.find((entry) => file.startsWith(entry.path)) ?? manifests[0];
 
   if (!manifest) {
     return {
@@ -195,10 +306,19 @@ export async function qualityCheck(
     ? file.slice(manifest.path.length).replace(/^[/\\]+/, '')
     : file.replace(/\\/g, '/');
 
-  const references = checkReferences(code, normalizedFile, manifest, manifests);
-  const conventions = validateConventions(code, normalizedFile, manifest);
-  const slop = detectSlop(code, manifest);
-  const rules = checkRules(code, normalizedFile);
+  return {
+    references: checkReferences(code, normalizedFile, manifest, manifests),
+    conventions: validateConventions(code, normalizedFile, manifest),
+    slop: detectSlop(code, manifest),
+    rules: checkRules(code, normalizedFile),
+  };
+}
 
-  return { references, conventions, slop, rules };
+export async function refreshDaemonState(config: OmniLinkConfig): Promise<ScanResult> {
+  const state = await updateDaemonState(config);
+  return {
+    manifests: state.manifests,
+    graph: state.graph,
+    context: state.context,
+  };
 }

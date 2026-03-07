@@ -49,6 +49,9 @@ jobs:
       - name: Benchmark smoke
         run: npm run benchmark:smoke
 
+      - name: Max-tier smoke
+        run: npm run smoke:max
+
       - name: Pack dry run
         run: npm run pack:check
 

@@ -61,10 +61,74 @@ export function buildEcosystemGraph(manifests: RepoManifest[]): EcosystemGraph {
   // 7. Assemble final EcosystemGraph
   return {
     repos: enrichedManifests,
-    bridges,
-    sharedTypes,
-    contractMismatches,
-    impactPaths,
+    bridges: bridges.map((bridge) => ({
+      ...bridge,
+      sourceKind: bridge.sourceKind ?? 'mixed',
+      confidence: bridge.confidence ?? 0.76,
+      provenance: bridge.provenance ?? [
+        {
+          sourceKind: 'parser',
+          adapter: 'graph-contract-map',
+          detail: 'api contract mapping',
+          confidence: 0.76,
+        },
+      ],
+    })),
+    sharedTypes: sharedTypes.map((lineage) => ({
+      ...lineage,
+      sourceKind: lineage.sourceKind ?? 'mixed',
+      confidence: lineage.confidence ?? 0.72,
+      provenance: lineage.provenance ?? [
+        {
+          sourceKind: 'parser',
+          adapter: 'type-flow-map',
+          detail: 'shared type lineage',
+          confidence: 0.72,
+        },
+      ],
+    })),
+    contractMismatches: contractMismatches.map((mismatch) => ({
+      ...mismatch,
+      sourceKind: mismatch.sourceKind ?? 'mixed',
+      confidence: mismatch.confidence ?? (mismatch.severity === 'breaking' ? 0.9 : 0.75),
+      riskScore:
+        mismatch.riskScore ??
+        (mismatch.severity === 'breaking' ? 92 : mismatch.severity === 'warning' ? 63 : 28),
+      provenance: mismatch.provenance ?? [
+        {
+          sourceKind: 'mixed',
+          adapter: 'contract-mismatch-detector',
+          detail: 'provider/consumer contract mismatch',
+          confidence: mismatch.severity === 'breaking' ? 0.9 : 0.75,
+        },
+      ],
+    })),
+    impactPaths: impactPaths.map((impactPath) => ({
+      ...impactPath,
+      sourceKind: impactPath.sourceKind ?? 'mixed',
+      confidence: impactPath.confidence ?? 0.7,
+      riskScore:
+        impactPath.riskScore ??
+        impactPath.affected.reduce(
+          (highest, affected) =>
+            Math.max(
+              highest,
+              affected.severity === 'breaking' ? 85 : affected.severity === 'warning' ? 55 : 20,
+            ),
+          0,
+        ),
+      provenance: impactPath.provenance ?? [
+        {
+          sourceKind: 'mixed',
+          adapter: 'impact-analyzer',
+          detail: 'cross-repo impact path',
+          confidence: 0.7,
+        },
+      ],
+    })),
+    semanticReferences: enrichedManifests.flatMap((manifest) => manifest.symbolReferences ?? []),
+    owners: enrichedManifests.flatMap((manifest) => manifest.owners ?? []),
+    runtimeSignals: enrichedManifests.flatMap((manifest) => manifest.runtimeSignals ?? []),
   };
 }
 

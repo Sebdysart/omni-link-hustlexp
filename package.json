@@ -1,6 +1,6 @@
 {
   "name": "omni-link",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Multi-repo AI ecosystem plugin for Claude Code",
   "type": "module",
   "main": "dist/index.js",
@@ -30,12 +30,15 @@
     "format:check": "prettier --check .",
     "pack:check": "npm pack --dry-run",
     "smoke:cli": "node scripts/cli-smoke.mjs",
+    "smoke:max": "node scripts/max-tier-smoke.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "eslint . && tsc --noEmit",
     "prepare": "husky",
-    "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check"
+    "review:pr": "node dist/cli.js review-pr --base main --head HEAD",
+    "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
+    "verify:max": "npm run verify && npm run smoke:max"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -60,13 +63,13 @@
     "eslint": "^8.57.1",
     "husky": "^9.1.7",
     "prettier": "^3.6.2",
-    "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
   "dependencies": {
     "gpt-tokenizer": "^3.4.0",
     "ignore": "^7.0.5",
     "p-limit": "^7.1.1",
+    "sql.js": "^1.14.1",
     "tree-sitter": "^0.22.1",
     "tree-sitter-go": "^0.23.0",
     "tree-sitter-java": "^0.23.0",
@@ -75,6 +78,7 @@
     "tree-sitter-rust": "^0.23.0",
     "tree-sitter-swift": "^0.7.1",
     "tree-sitter-typescript": "^0.23.0",
+    "typescript": "^5.7.0",
     "zod": "^4.1.11"
   }
 }

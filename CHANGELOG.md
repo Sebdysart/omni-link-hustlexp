@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-07
+
 ### Added
+
+- Semantic TypeScript analysis with provenance and confidence scoring.
+- Daemon-backed warm graph refresh and watch mode.
+- Ownership resolution, runtime signal ingestion, policy evaluation, and risk scoring.
+- PR review artifacts plus bounded `apply` and `rollback` execution planning.
+- Branch-aware impact analysis, new CLI commands, and max-tier smoke verification.
 
 - Async scan pipeline with bounded parallel repo processing.
 - `.gitignore` and `.claudeignore` aware source walking.

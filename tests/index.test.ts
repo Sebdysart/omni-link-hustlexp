@@ -135,6 +135,24 @@ function makeGraph(manifests: RepoManifest[]): EcosystemGraph {
   };
 }
 
+function expectEnrichedGraph(graph: EcosystemGraph): ReturnType<typeof expect.objectContaining> {
+  return expect.objectContaining({
+    bridges: graph.bridges,
+    sharedTypes: graph.sharedTypes,
+    contractMismatches: graph.contractMismatches,
+    impactPaths: graph.impactPaths,
+    owners: expect.any(Array),
+    runtimeSignals: expect.any(Array),
+    repos: expect.arrayContaining([
+      expect.objectContaining({
+        repoId: graph.repos[0]?.repoId ?? expect.any(String),
+        owners: expect.any(Array),
+        runtimeSignals: expect.any(Array),
+      }),
+    ]),
+  });
+}
+
 // ---- Tests ----
 
 describe('engine/index — scan()', () => {
@@ -167,18 +185,28 @@ describe('engine/index — scan()', () => {
 
     // Scanner called once per repo, with the shared fileCache Map and optional manifestCache
     expect(scanRepo).toHaveBeenCalledTimes(2);
-    expect(scanRepo).toHaveBeenCalledWith(config.repos[0], expect.any(Map), expect.anything());
-    expect(scanRepo).toHaveBeenCalledWith(config.repos[1], expect.any(Map), expect.anything());
+    expect(scanRepo).toHaveBeenCalledWith(
+      config.repos[0],
+      expect.any(Map),
+      expect.anything(),
+      expect.objectContaining({ config }),
+    );
+    expect(scanRepo).toHaveBeenCalledWith(
+      config.repos[1],
+      expect.any(Map),
+      expect.anything(),
+      expect.objectContaining({ config }),
+    );
 
     // Grapher receives all manifests
     expect(buildEcosystemGraph).toHaveBeenCalledWith([m0, m1]);
 
     // Context builder receives graph + config
-    expect(buildContext).toHaveBeenCalledWith(graph, config);
+    expect(buildContext).toHaveBeenCalledWith(expectEnrichedGraph(graph), config);
 
     // Result structure
     expect(result.manifests).toEqual([m0, m1]);
-    expect(result.graph).toBe(graph);
+    expect(result.graph).toEqual(expectEnrichedGraph(graph));
     expect(result.context.digest).toBe(digest);
     expect(result.context.markdown).toBe('# Digest');
   });
@@ -217,7 +245,7 @@ describe('engine/index — impact()', () => {
 
     expect(scanRepo).toHaveBeenCalledTimes(1);
     expect(buildEcosystemGraph).toHaveBeenCalledWith([m0]);
-    expect(analyzeImpact).toHaveBeenCalledWith(graph, changedFiles);
+    expect(analyzeImpact).toHaveBeenCalledWith(expectEnrichedGraph(graph), changedFiles);
     expect(result).toBe(impactPaths);
   });
 });
@@ -252,7 +280,7 @@ describe('engine/index — health()', () => {
 
     expect(scanRepo).toHaveBeenCalledTimes(1);
     expect(buildEcosystemGraph).toHaveBeenCalledWith([m0]);
-    expect(scoreEcosystemHealth).toHaveBeenCalledWith(graph);
+    expect(scoreEcosystemHealth).toHaveBeenCalledWith(expectEnrichedGraph(graph));
     expect(result).toBe(healthResult);
   });
 });
@@ -287,8 +315,12 @@ describe('engine/index — evolve()', () => {
 
     expect(scanRepo).toHaveBeenCalledTimes(1);
     expect(buildEcosystemGraph).toHaveBeenCalledWith([m0]);
-    expect(analyzeEvolution).toHaveBeenCalledWith(graph, config);
-    expect(result).toBe(suggestions);
+    expect(analyzeEvolution).toHaveBeenCalledWith(expectEnrichedGraph(graph), config);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      ...suggestions[0],
+      queue: 'business-opportunity',
+    });
   });
 });
 
@@ -329,7 +361,7 @@ describe('engine/index — impactFromUncommitted()', () => {
     expect(buildEcosystemGraph).toHaveBeenCalledWith([m0]);
     // analyzeImpact must receive the auto-detected changedFiles (both uncommitted files)
     expect(analyzeImpact).toHaveBeenCalledWith(
-      graph,
+      expectEnrichedGraph(graph),
       expect.arrayContaining([
         expect.objectContaining({ repo: 'repo-0', file: 'src/api.ts', change: 'uncommitted' }),
         expect.objectContaining({ repo: 'repo-0', file: 'src/types.ts', change: 'uncommitted' }),
@@ -352,7 +384,7 @@ describe('engine/index — impactFromUncommitted()', () => {
 
     const result = await impactFromUncommitted(config);
 
-    expect(analyzeImpact).toHaveBeenCalledWith(graph, []);
+    expect(analyzeImpact).toHaveBeenCalledWith(expectEnrichedGraph(graph), []);
     expect(result).toEqual([]);
   });
 });

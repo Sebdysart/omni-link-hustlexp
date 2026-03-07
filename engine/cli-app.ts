@@ -1,4 +1,15 @@
-import { scan, impactFromUncommitted, health, evolve } from './index.js';
+import {
+  apply,
+  evolve,
+  health,
+  impactFromRefs,
+  impactFromUncommitted,
+  owners,
+  reviewPr,
+  rollback,
+  scan,
+  watch,
+} from './index.js';
 import { loadConfig, resolveConfigPath } from './config.js';
 import type { OmniLinkConfig } from './types.js';
 
@@ -13,12 +24,20 @@ Commands:
   impact    Analyze cross-repo impact of uncommitted changes
   health    Compute per-repo and ecosystem health scores
   evolve    Generate evolution suggestions (gaps, bottlenecks, upgrades)
+  watch     Build or refresh daemon-backed ecosystem state
+  owners    Resolve repo ownership assignments
+  review-pr Generate a PR review artifact with risk and execution planning
+  apply     Execute the generated automation plan (bounded by policy)
+  rollback  Roll back the last generated automation plan
 
 Options:
   --config <path>         Path to .omni-link.json config file
                           (auto-detects from cwd or ~/.claude/ if omitted)
   --format <json|markdown>  Output format for supported commands
   --markdown              Shortcut for --format markdown
+  --base <ref>            Base git ref for PR / branch-aware analysis
+  --head <ref>            Head git ref for PR / branch-aware analysis
+  --once                  Run a single watch refresh and exit
   --help                  Show this help message
 
 Examples:
@@ -27,12 +46,18 @@ Examples:
   omni-link scan --config ./my-config.json
   omni-link health --config /path/to/.omni-link.json
   omni-link evolve
+  omni-link impact --base main --head HEAD
+  omni-link watch --once
+  omni-link review-pr --base main --head HEAD
 `.trim();
 
 export interface CliArgs {
   command: string | undefined;
   configPath: string | undefined;
   outputFormat: 'json' | 'markdown';
+  baseRef: string | undefined;
+  headRef: string | undefined;
+  once: boolean;
   help: boolean;
 }
 
@@ -42,7 +67,13 @@ export interface CliIo {
 }
 
 export interface CliDeps {
+  apply: typeof apply;
+  reviewPr: typeof reviewPr;
+  rollback: typeof rollback;
   scan: typeof scan;
+  watch: typeof watch;
+  owners: typeof owners;
+  impactFromRefs: typeof impactFromRefs;
   impactFromUncommitted: typeof impactFromUncommitted;
   health: typeof health;
   evolve: typeof evolve;
@@ -57,7 +88,13 @@ const DEFAULT_IO: CliIo = {
 };
 
 const DEFAULT_DEPS: CliDeps = {
+  apply,
+  reviewPr,
+  rollback,
   scan,
+  watch,
+  owners,
+  impactFromRefs,
   impactFromUncommitted,
   health,
   evolve,
@@ -70,6 +107,9 @@ export function parseArgs(argv: string[]): CliArgs {
   let command: string | undefined;
   let configPath: string | undefined;
   let outputFormat: 'json' | 'markdown' = 'json';
+  let baseRef: string | undefined;
+  let headRef: string | undefined;
+  let once = false;
   let help = false;
 
   for (let i = 0; i < argv.length; i++) {
@@ -82,6 +122,11 @@ export function parseArgs(argv: string[]): CliArgs {
 
     if (arg === '--markdown') {
       outputFormat = 'markdown';
+      continue;
+    }
+
+    if (arg === '--once') {
+      once = true;
       continue;
     }
 
@@ -108,6 +153,26 @@ export function parseArgs(argv: string[]): CliArgs {
       continue;
     }
 
+    if (arg === '--base') {
+      const next = argv[i + 1];
+      if (!next) {
+        throw new Error('Missing value for --base');
+      }
+      baseRef = next;
+      i++;
+      continue;
+    }
+
+    if (arg === '--head') {
+      const next = argv[i + 1];
+      if (!next) {
+        throw new Error('Missing value for --head');
+      }
+      headRef = next;
+      i++;
+      continue;
+    }
+
     if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -120,7 +185,7 @@ export function parseArgs(argv: string[]): CliArgs {
     throw new Error(`Unexpected argument: ${arg}`);
   }
 
-  return { command, configPath, outputFormat, help };
+  return { command, configPath, outputFormat, baseRef, headRef, once, help };
 }
 
 export function resolveCliConfig(
@@ -174,7 +239,10 @@ export async function runCli(
 
       case 'impact': {
         const config = resolveCliConfig(args.configPath, deps);
-        const result = await deps.impactFromUncommitted(config);
+        const result =
+          args.baseRef && args.headRef
+            ? await deps.impactFromRefs(config, args.baseRef, args.headRef)
+            : await deps.impactFromUncommitted(config);
         io.stdout(JSON.stringify(result, null, 2));
         return 0;
       }
@@ -189,6 +257,49 @@ export async function runCli(
       case 'evolve': {
         const config = resolveCliConfig(args.configPath, deps);
         const result = await deps.evolve(config);
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'watch': {
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.watch(config, { once: args.once });
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'owners': {
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.owners(config);
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'review-pr': {
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.reviewPr(
+          config,
+          args.baseRef ?? config.github?.defaultBaseBranch ?? 'main',
+          args.headRef ?? 'HEAD',
+        );
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'apply': {
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.apply(
+          config,
+          args.baseRef ?? config.github?.defaultBaseBranch ?? 'main',
+          args.headRef ?? 'HEAD',
+        );
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'rollback': {
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.rollback(config);
         io.stdout(JSON.stringify(result, null, 2));
         return 0;
       }

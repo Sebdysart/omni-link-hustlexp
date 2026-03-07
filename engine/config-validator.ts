@@ -20,6 +20,8 @@ const evolutionCategorySchema = z.enum([
   'security',
 ]);
 
+const riskLevelSchema = z.enum(['low', 'medium', 'high', 'critical']);
+
 function normalizeCategory(category: string): string {
   return category === 'features' ? 'feature' : category;
 }
@@ -48,6 +50,14 @@ export const repoConfigSchema = z.object({
   role: z.string().min(1),
 });
 
+const ownershipRuleSchema = z.object({
+  owner: z.string().min(1),
+  kind: z.enum(['team', 'person', 'service']),
+  scope: z.enum(['repo', 'path', 'api', 'package']),
+  repo: z.string().min(1).optional(),
+  pattern: z.string().min(1).optional(),
+});
+
 const DEFAULT_EVOLUTION = {
   aggressiveness: 'aggressive' as const,
   maxSuggestionsPerSession: 5,
@@ -71,6 +81,69 @@ const DEFAULT_CONTEXT = {
 const DEFAULT_CACHE = {
   directory: '.omni-link-cache',
   maxAgeDays: 7,
+};
+
+const DEFAULT_DAEMON = {
+  enabled: false,
+  statePath: '.omni-link-daemon-state.sqlite',
+  pollIntervalMs: 1000,
+  cacheRetentionDays: 7,
+  workspaceGroups: {},
+  preferDaemon: false,
+};
+
+const DEFAULT_GITHUB = {
+  enabled: false,
+  defaultBaseBranch: 'main',
+  commentOnPr: true,
+  publishChecks: true,
+  artifactPath: '.omni-link/review-artifact.json',
+};
+
+const DEFAULT_AUTOMATION = {
+  enabled: false,
+  branchPrefix: 'codex/omni-link',
+  createPullRequest: true,
+  retryLimit: 2,
+  allowedRiskTiers: ['low', 'medium'] as Array<z.infer<typeof riskLevelSchema>>,
+  autoApplyRiskTiers: ['low'] as Array<z.infer<typeof riskLevelSchema>>,
+  dryRunByDefault: true,
+};
+
+const DEFAULT_OWNERSHIP = {
+  enabled: false,
+  defaultOwner: 'unassigned',
+  rules: [] as Array<z.infer<typeof ownershipRuleSchema>>,
+};
+
+const DEFAULT_RUNTIME = {
+  enabled: false,
+};
+
+const DEFAULT_POLICIES = {
+  enabled: false,
+  protectedBranches: ['main'],
+  requiredChecks: ['lint', 'test', 'build'],
+  requiredOwners: [] as string[],
+  maxAllowedRisk: 'medium' as const,
+  forbidDirectMainMutation: true,
+  forbidDestructiveChanges: true,
+};
+
+const DEFAULT_MAX_TIER = {
+  enabled: false,
+  semanticAnalysis: {
+    enabled: false,
+    preferSemantic: false,
+    confidenceThreshold: 0.6,
+    languages: ['typescript', 'tsx', 'javascript'] as Array<'typescript' | 'tsx' | 'javascript'>,
+  },
+  runtimeIngestion: {
+    enabled: false,
+  },
+  execution: {
+    enabled: false,
+  },
 };
 
 export const omniLinkConfigSchema = z.object({
@@ -105,6 +178,108 @@ export const omniLinkConfigSchema = z.object({
       maxAgeDays: z.number().int().min(1).max(30).default(7),
     })
     .default(DEFAULT_CACHE),
+  daemon: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_DAEMON.enabled),
+      statePath: z.string().min(1).default(DEFAULT_DAEMON.statePath),
+      pollIntervalMs: z.number().int().min(100).max(60_000).default(DEFAULT_DAEMON.pollIntervalMs),
+      cacheRetentionDays: z
+        .number()
+        .int()
+        .min(1)
+        .max(90)
+        .default(DEFAULT_DAEMON.cacheRetentionDays),
+      workspaceGroups: z.record(z.string(), z.array(z.string().min(1))).default({}),
+      preferDaemon: z.boolean().default(DEFAULT_DAEMON.preferDaemon),
+    })
+    .optional(),
+  github: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_GITHUB.enabled),
+      owner: z.string().min(1).optional(),
+      repo: z.string().min(1).optional(),
+      defaultBaseBranch: z.string().min(1).default(DEFAULT_GITHUB.defaultBaseBranch),
+      commentOnPr: z.boolean().default(DEFAULT_GITHUB.commentOnPr),
+      publishChecks: z.boolean().default(DEFAULT_GITHUB.publishChecks),
+      artifactPath: z.string().min(1).default(DEFAULT_GITHUB.artifactPath),
+    })
+    .optional(),
+  automation: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_AUTOMATION.enabled),
+      branchPrefix: z.string().min(1).default(DEFAULT_AUTOMATION.branchPrefix),
+      createPullRequest: z.boolean().default(DEFAULT_AUTOMATION.createPullRequest),
+      retryLimit: z.number().int().min(0).max(10).default(DEFAULT_AUTOMATION.retryLimit),
+      allowedRiskTiers: z
+        .array(riskLevelSchema)
+        .min(1)
+        .default(DEFAULT_AUTOMATION.allowedRiskTiers),
+      autoApplyRiskTiers: z
+        .array(riskLevelSchema)
+        .min(1)
+        .default(DEFAULT_AUTOMATION.autoApplyRiskTiers),
+      dryRunByDefault: z.boolean().default(DEFAULT_AUTOMATION.dryRunByDefault),
+    })
+    .optional(),
+  ownership: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_OWNERSHIP.enabled),
+      defaultOwner: z.string().min(1).default(DEFAULT_OWNERSHIP.defaultOwner),
+      rules: z.array(ownershipRuleSchema).default(DEFAULT_OWNERSHIP.rules),
+    })
+    .optional(),
+  runtime: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_RUNTIME.enabled),
+      coverageSummaryPath: z.string().min(1).optional(),
+      testResultsPath: z.string().min(1).optional(),
+      openApiPath: z.string().min(1).optional(),
+      graphQlSchemaPath: z.string().min(1).optional(),
+      telemetrySummaryPath: z.string().min(1).optional(),
+      traceSummaryPath: z.string().min(1).optional(),
+    })
+    .optional(),
+  policies: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_POLICIES.enabled),
+      protectedBranches: z.array(z.string().min(1)).default(DEFAULT_POLICIES.protectedBranches),
+      requiredChecks: z.array(z.string().min(1)).default(DEFAULT_POLICIES.requiredChecks),
+      requiredOwners: z.array(z.string().min(1)).default(DEFAULT_POLICIES.requiredOwners),
+      maxAllowedRisk: riskLevelSchema.default(DEFAULT_POLICIES.maxAllowedRisk),
+      forbidDirectMainMutation: z.boolean().default(DEFAULT_POLICIES.forbidDirectMainMutation),
+      forbidDestructiveChanges: z.boolean().default(DEFAULT_POLICIES.forbidDestructiveChanges),
+    })
+    .optional(),
+  maxTier: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_MAX_TIER.enabled),
+      semanticAnalysis: z
+        .object({
+          enabled: z.boolean().default(DEFAULT_MAX_TIER.semanticAnalysis.enabled),
+          preferSemantic: z.boolean().default(DEFAULT_MAX_TIER.semanticAnalysis.preferSemantic),
+          confidenceThreshold: z
+            .number()
+            .min(0)
+            .max(1)
+            .default(DEFAULT_MAX_TIER.semanticAnalysis.confidenceThreshold),
+          languages: z
+            .array(z.enum(['typescript', 'tsx', 'javascript']))
+            .min(1)
+            .default(DEFAULT_MAX_TIER.semanticAnalysis.languages),
+        })
+        .default(DEFAULT_MAX_TIER.semanticAnalysis),
+      runtimeIngestion: z
+        .object({
+          enabled: z.boolean().default(DEFAULT_MAX_TIER.runtimeIngestion.enabled),
+        })
+        .default(DEFAULT_MAX_TIER.runtimeIngestion),
+      execution: z
+        .object({
+          enabled: z.boolean().default(DEFAULT_MAX_TIER.execution.enabled),
+        })
+        .default(DEFAULT_MAX_TIER.execution),
+    })
+    .optional(),
   simulateOnly: z.boolean().optional(),
 });
 
