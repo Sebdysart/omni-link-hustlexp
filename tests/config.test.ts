@@ -111,4 +111,25 @@ describe('config', () => {
     expect(config.gitlab?.project).toBe('platform');
     expect(config.gitlab?.publishMode).toBe(DEFAULT_CONFIG.gitlab?.publishMode);
   });
+
+  it('loadConfig extends max-tier semantic languages to Java and Swift', () => {
+    const configPath = path.join(tmpDir, '.omni-link.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        repos: [{ name: 'test', path: '/tmp/test', language: 'typescript', role: 'backend' }],
+        maxTier: {
+          enabled: true,
+          semanticAnalysis: {
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    const config = loadConfig(configPath);
+    expect(config.maxTier?.semanticAnalysis?.languages).toEqual(
+      expect.arrayContaining(['typescript', 'python', 'go', 'graphql', 'java', 'swift']),
+    );
+  });
 });

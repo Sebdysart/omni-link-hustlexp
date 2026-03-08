@@ -74,9 +74,9 @@
     "rollbackKeys": ["branchName", "restoreTargets", "steps"]
   },
   "apply": {
-    "topLevelKeys": ["branches", "executed", "pullRequestCreated", "warnings"]
+    "topLevelKeys": ["branches", "executed", "ledger", "pullRequestCreated", "warnings"]
   },
   "rollback": {
-    "topLevelKeys": ["branches", "executed", "pullRequestCreated", "warnings"]
+    "topLevelKeys": ["branches", "executed", "ledger", "pullRequestCreated", "warnings"]
   }
 }

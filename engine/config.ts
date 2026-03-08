@@ -86,7 +86,7 @@ export const DEFAULT_CONFIG: Omit<OmniLinkConfig, 'repos'> = {
       enabled: false,
       preferSemantic: false,
       confidenceThreshold: 0.6,
-      languages: ['typescript', 'tsx', 'javascript'],
+      languages: ['typescript', 'tsx', 'javascript', 'python', 'go', 'graphql', 'java', 'swift'],
     },
     runtimeIngestion: {
       enabled: false,

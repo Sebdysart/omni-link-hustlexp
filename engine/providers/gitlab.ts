@@ -23,6 +23,7 @@ import {
   applyReviewProviderCapabilities,
   buildStandardReviewReplayOutput,
   createDryRunReviewTransport,
+  REVIEW_COMMENT_MARKER,
   publishSkipReasonForMetadata,
   skippedRecord,
   summarizeStandardReviewArtifact,
@@ -170,6 +171,28 @@ async function postGitLabJson<TResponse>(
   return (await response.json()) as TResponse;
 }
 
+async function putGitLabJson<TResponse>(
+  url: string,
+  body: Record<string, string>,
+  options: Required<Pick<GitLabApiTransportOptions, 'fetchImpl' | 'token'>>,
+): Promise<TResponse> {
+  const response = await options.fetchImpl(url, {
+    method: 'PUT',
+    headers: {
+      'PRIVATE-TOKEN': options.token,
+      'Content-Type': 'application/json',
+      'User-Agent': 'omni-link',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitLab publish failed (${response.status} ${response.statusText})`);
+  }
+
+  return (await response.json()) as TResponse;
+}
+
 async function getGitLabJson<TResponse>(
   url: string,
   options: Required<Pick<GitLabApiTransportOptions, 'fetchImpl' | 'token'>>,
@@ -187,6 +210,21 @@ async function getGitLabJson<TResponse>(
   }
 
   return (await response.json()) as TResponse;
+}
+
+async function findGitLabExistingComment(
+  target: ReviewPublishTarget,
+  options: Required<Pick<GitLabApiTransportOptions, 'fetchImpl' | 'token'>>,
+  apiRoot: string,
+): Promise<{ id: number; web_url?: string } | null> {
+  const projectPath = encodeURIComponent(`${target.owner}/${target.repo}`);
+  const notes = await getGitLabJson<Array<{ id: number; web_url?: string; body?: string | null }>>(
+    `${apiRoot}/projects/${projectPath}/merge_requests/${target.pullRequestNumber}/notes?per_page=100`,
+    options,
+  );
+
+  const match = notes.find((note) => note.body?.includes(REVIEW_COMMENT_MARKER));
+  return match ? { id: match.id, web_url: match.web_url } : null;
 }
 
 function gitLabStatusForConclusion(
@@ -220,12 +258,21 @@ export function createGitLabApiReviewTransport(
     mode: 'gitlab',
     async publishComment(input: PublishCommentInput): Promise<ReviewPublishRecord> {
       const projectPath = encodeURIComponent(`${input.target.owner}/${input.target.repo}`);
-      const endpoint = `${apiRoot}/projects/${projectPath}/merge_requests/${input.target.pullRequestNumber}/notes`;
-      const response = await postGitLabJson<{ id: number; web_url?: string }>(
-        endpoint,
-        { body: input.body },
-        { fetchImpl, token },
-      );
+      const existing = await findGitLabExistingComment(input.target, { fetchImpl, token }, apiRoot);
+      const endpoint = existing
+        ? `${apiRoot}/projects/${projectPath}/merge_requests/${input.target.pullRequestNumber}/notes/${existing.id}`
+        : `${apiRoot}/projects/${projectPath}/merge_requests/${input.target.pullRequestNumber}/notes`;
+      const response = existing
+        ? await putGitLabJson<{ id: number; web_url?: string }>(
+            endpoint,
+            { body: input.body },
+            { fetchImpl, token },
+          )
+        : await postGitLabJson<{ id: number; web_url?: string }>(
+            endpoint,
+            { body: input.body },
+            { fetchImpl, token },
+          );
       return {
         kind: 'comment',
         status: 'published',

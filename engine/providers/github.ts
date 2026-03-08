@@ -23,6 +23,7 @@ import {
   applyReviewProviderCapabilities,
   buildStandardReviewReplayOutput,
   createDryRunReviewTransport,
+  REVIEW_COMMENT_MARKER,
   publishSkipReasonForMetadata,
   skippedRecord,
   summarizeStandardReviewArtifact,
@@ -93,6 +94,19 @@ function resolveFetchImpl(fetchImpl?: typeof fetch): typeof fetch | undefined {
   return fetchImpl ?? globalThis.fetch;
 }
 
+function gitHubStatusForConclusion(
+  conclusion: PublishCheckRunInput['checkRun']['conclusion'],
+): 'success' | 'failure' | 'pending' {
+  switch (conclusion) {
+    case 'success':
+      return 'success';
+    case 'neutral':
+      return 'pending';
+    case 'action_required':
+      return 'failure';
+  }
+}
+
 function resolveReplayDirectory(config: OmniLinkConfig, cwd: string = process.cwd()): string {
   const configured = config.github?.replayDirectory ?? path.join('.omni-link', 'provider-replay');
   return path.isAbsolute(configured) ? configured : path.join(cwd, configured);
@@ -145,6 +159,16 @@ export interface GitHubApiTransportOptions {
   fetchImpl?: typeof fetch;
 }
 
+class GitHubApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly statusText: string,
+  ) {
+    super(message);
+  }
+}
+
 async function postGitHubJson<TResponse>(
   url: string,
   body: unknown,
@@ -163,7 +187,39 @@ async function postGitHubJson<TResponse>(
   });
 
   if (!response.ok) {
-    throw new Error(`GitHub publish failed (${response.status} ${response.statusText})`);
+    throw new GitHubApiError(
+      `GitHub publish failed (${response.status} ${response.statusText})`,
+      response.status,
+      response.statusText,
+    );
+  }
+
+  return (await response.json()) as TResponse;
+}
+
+async function patchGitHubJson<TResponse>(
+  url: string,
+  body: unknown,
+  options: Required<Pick<GitHubApiTransportOptions, 'fetchImpl' | 'token'>>,
+): Promise<TResponse> {
+  const response = await options.fetchImpl(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${options.token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'omni-link',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new GitHubApiError(
+      `GitHub publish failed (${response.status} ${response.statusText})`,
+      response.status,
+      response.statusText,
+    );
   }
 
   return (await response.json()) as TResponse;
@@ -190,6 +246,22 @@ async function getGitHubJson<TResponse>(
   return (await response.json()) as TResponse;
 }
 
+async function findGitHubExistingComment(
+  target: ReviewPublishTarget,
+  options: Required<Pick<GitHubApiTransportOptions, 'fetchImpl' | 'token'>>,
+  apiRoot: string,
+): Promise<{ id: number; html_url?: string } | null> {
+  const comments = await getGitHubJson<
+    Array<{ id: number; html_url?: string; body?: string | null }>
+  >(
+    `${apiRoot}/repos/${target.owner}/${target.repo}/issues/${target.pullRequestNumber}/comments?per_page=100`,
+    options,
+  );
+
+  const match = comments.find((comment) => comment.body?.includes(REVIEW_COMMENT_MARKER));
+  return match ? { id: match.id, html_url: match.html_url } : null;
+}
+
 export function createGitHubApiReviewTransport(
   options: GitHubApiTransportOptions = {},
 ): ReviewPublishTransport {
@@ -207,12 +279,21 @@ export function createGitHubApiReviewTransport(
   return {
     mode: 'github',
     async publishComment(input: PublishCommentInput): Promise<ReviewPublishRecord> {
-      const endpoint = `${apiRoot}/repos/${input.target.owner}/${input.target.repo}/issues/${input.target.pullRequestNumber}/comments`;
-      const response = await postGitHubJson<{ id: number; html_url?: string }>(
-        endpoint,
-        { body: input.body },
-        { fetchImpl, token },
-      );
+      const existing = await findGitHubExistingComment(input.target, { fetchImpl, token }, apiRoot);
+      const endpoint = existing
+        ? `${apiRoot}/repos/${input.target.owner}/${input.target.repo}/issues/comments/${existing.id}`
+        : `${apiRoot}/repos/${input.target.owner}/${input.target.repo}/issues/${input.target.pullRequestNumber}/comments`;
+      const response = existing
+        ? await patchGitHubJson<{ id: number; html_url?: string }>(
+            endpoint,
+            { body: input.body },
+            { fetchImpl, token },
+          )
+        : await postGitHubJson<{ id: number; html_url?: string }>(
+            endpoint,
+            { body: input.body },
+            { fetchImpl, token },
+          );
       return {
         kind: 'comment',
         status: 'published',
@@ -226,35 +307,58 @@ export function createGitHubApiReviewTransport(
       }
 
       const endpoint = `${apiRoot}/repos/${input.target.owner}/${input.target.repo}/check-runs`;
-      const response = await postGitHubJson<{ id: number; html_url?: string }>(
-        endpoint,
-        {
-          name: input.checkRun.name,
-          head_sha: input.target.headSha,
-          status: 'completed',
-          conclusion: input.checkRun.conclusion,
-          output: {
-            title: input.checkRun.title,
-            summary: input.checkRun.summary,
-            text: input.checkRun.text,
-            annotations: input.checkRun.annotations.slice(0, 50).map((annotation) => ({
-              path: annotation.path,
-              start_line: annotation.line ?? 1,
-              end_line: annotation.line ?? 1,
-              annotation_level: annotation.level,
-              title: annotation.title,
-              message: annotation.message,
-            })),
+      try {
+        const response = await postGitHubJson<{ id: number; html_url?: string }>(
+          endpoint,
+          {
+            name: input.checkRun.name,
+            head_sha: input.target.headSha,
+            status: 'completed',
+            conclusion: input.checkRun.conclusion,
+            output: {
+              title: input.checkRun.title,
+              summary: input.checkRun.summary,
+              text: input.checkRun.text,
+              annotations: input.checkRun.annotations.slice(0, 50).map((annotation) => ({
+                path: annotation.path,
+                start_line: annotation.line ?? 1,
+                end_line: annotation.line ?? 1,
+                annotation_level: annotation.level,
+                title: annotation.title,
+                message: annotation.message,
+              })),
+            },
           },
-        },
-        { fetchImpl, token },
-      );
-      return {
-        kind: 'check-run',
-        status: 'published',
-        id: String(response.id),
-        url: response.html_url,
-      };
+          { fetchImpl, token },
+        );
+        return {
+          kind: 'check-run',
+          status: 'published',
+          id: String(response.id),
+          url: response.html_url,
+        };
+      } catch (error) {
+        if (!(error instanceof GitHubApiError) || (error.status !== 403 && error.status !== 422)) {
+          throw error;
+        }
+
+        const response = await postGitHubJson<{ id: number; target_url?: string; url?: string }>(
+          `${apiRoot}/repos/${input.target.owner}/${input.target.repo}/statuses/${input.target.headSha}`,
+          {
+            state: gitHubStatusForConclusion(input.checkRun.conclusion),
+            context: input.checkRun.name,
+            description: input.checkRun.title,
+            target_url: `https://github.com/${input.target.owner}/${input.target.repo}/commit/${input.target.headSha}`,
+          },
+          { fetchImpl, token },
+        );
+        return {
+          kind: 'check-run',
+          status: 'published',
+          id: String(response.id),
+          url: response.target_url ?? response.url,
+        };
+      }
     },
   };
 }

@@ -8,6 +8,16 @@ import type {
 } from '../types.js';
 import type { ReviewAnnotation, ReviewPublishTransport, ReviewReplayOutput } from './types.js';
 
+export const REVIEW_COMMENT_MARKER = '<!-- omni-link review -->';
+
+export function ensureReviewCommentMarker(body: string): string {
+  if (body.includes(REVIEW_COMMENT_MARKER)) {
+    return body;
+  }
+
+  return `${REVIEW_COMMENT_MARKER}\n${body}`;
+}
+
 export function summarizeStandardReviewArtifact(artifact: ReviewArtifact): string {
   const plannedChanges = artifact.executionPlan?.changes.length ?? 0;
   const approvals = artifact.executionPlan?.approvals.length ?? 0;
@@ -110,18 +120,20 @@ export function buildStandardReviewReplayOutput(
       .join(':')
       .localeCompare([right.path, right.line ?? 0, right.level, right.title].join(':')),
   );
-  const commentBody = [
-    summary,
-    '',
-    '## Contract Mismatches',
-    ...mismatchLines(artifact),
-    '',
-    '## Impact Paths',
-    ...impactLines(artifact),
-    '',
-    '## Planned Changes',
-    ...(plannedChangeLines(artifact).length > 0 ? plannedChangeLines(artifact) : ['- none']),
-  ].join('\n');
+  const commentBody = ensureReviewCommentMarker(
+    [
+      summary,
+      '',
+      '## Contract Mismatches',
+      ...mismatchLines(artifact),
+      '',
+      '## Impact Paths',
+      ...impactLines(artifact),
+      '',
+      '## Planned Changes',
+      ...(plannedChangeLines(artifact).length > 0 ? plannedChangeLines(artifact) : ['- none']),
+    ].join('\n'),
+  );
 
   return {
     summary,

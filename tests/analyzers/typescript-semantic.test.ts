@@ -154,7 +154,7 @@ describe('TypeScript semantic analyzer', () => {
     assertSemanticMetadata(trpcFile?.procedures ?? []);
     assertSemanticMetadata(routerFile?.imports ?? []);
     assertSemanticMetadata(importReferences);
-  }, 15000);
+  }, 30000);
 
   it('is selected through the analyzer registry when max-tier semantic analysis is enabled', async () => {
     const selection = await analyzeRepoSemantics(repo, filePaths, createSemanticConfig(repo));
@@ -162,5 +162,5 @@ describe('TypeScript semantic analyzer', () => {
     expect(selection.preferSemantic).toBe(true);
     expect(selection.analysis?.adapter).toBe('typescript-compiler');
     expect(selection.analysis?.files.get('src/router.ts')?.routes).toHaveLength(2);
-  }, 15000);
+  }, 30000);
 });

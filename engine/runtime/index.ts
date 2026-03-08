@@ -20,6 +20,36 @@ function readJsonIfPresent(filePath: string): Record<string, unknown> | null {
   }
 }
 
+function readTextIfPresent(filePath: string): string | null {
+  if (!fs.existsSync(filePath)) return null;
+
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function numberLike(value: unknown, keys: string[]): number | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const candidate = record[key];
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function coverageSignal(manifest: RepoManifest): RuntimeSignal | null {
   if (manifest.health.testCoverage === null) return null;
   const weight = Math.max(0, Math.min(1, manifest.health.testCoverage / 100));
@@ -122,6 +152,218 @@ function testResultsSignal(manifest: RepoManifest, config: OmniLinkConfig): Runt
   };
 }
 
+function openApiSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
+  const configuredPath = config.runtime?.openApiPath;
+  if (!config.runtime?.enabled || !configuredPath) return null;
+
+  const resolvedPath = path.isAbsolute(configuredPath)
+    ? configuredPath
+    : path.join(manifest.path, configuredPath);
+  const json = readJsonIfPresent(resolvedPath);
+  if (json) {
+    const pathsObject = json.paths as Record<string, Record<string, unknown>> | undefined;
+    if (pathsObject) {
+      const operations = Object.values(pathsObject).reduce((total, value) => {
+        if (typeof value !== 'object' || value === null) {
+          return total;
+        }
+        return total + Object.keys(value).length;
+      }, 0);
+
+      return {
+        kind: 'openapi',
+        source: resolvedPath,
+        weight: clamp01(0.3 + operations / 50),
+        value: operations,
+        detail: `operations=${operations}`,
+        sourceKind: 'runtime',
+        confidence: 0.82,
+        provenance: [
+          {
+            sourceKind: 'runtime',
+            adapter: 'openapi-artifact',
+            detail: 'OpenAPI paths and operations',
+            confidence: 0.82,
+          },
+        ],
+      };
+    }
+  }
+
+  const source = readTextIfPresent(resolvedPath);
+  if (!source) return null;
+  const pathMatches = source.match(/^\s*\/[^:\n]+:/gm) ?? [];
+  const methodMatches = source.match(/^\s*(get|post|put|patch|delete|head|options):/gim) ?? [];
+  const operations = Math.max(methodMatches.length, pathMatches.length);
+  if (operations === 0) return null;
+
+  return {
+    kind: 'openapi',
+    source: resolvedPath,
+    weight: clamp01(0.25 + operations / 60),
+    value: operations,
+    detail: `operations=${operations}`,
+    sourceKind: 'runtime',
+    confidence: 0.72,
+    provenance: [
+      {
+        sourceKind: 'runtime',
+        adapter: 'openapi-artifact',
+        detail: 'OpenAPI text artifact',
+        confidence: 0.72,
+      },
+    ],
+  };
+}
+
+function graphQlSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
+  const configuredPath = config.runtime?.graphQlSchemaPath;
+  if (!config.runtime?.enabled || !configuredPath) return null;
+
+  const resolvedPath = path.isAbsolute(configuredPath)
+    ? configuredPath
+    : path.join(manifest.path, configuredPath);
+  const json = readJsonIfPresent(resolvedPath);
+  if (json) {
+    const schema =
+      (json.data as { __schema?: { types?: unknown[]; queryType?: { name?: string } } } | undefined)
+        ?.__schema ??
+      (json.__schema as { types?: unknown[]; queryType?: { name?: string } } | undefined);
+    const typeCount = schema?.types?.length;
+    if (typeof typeCount === 'number' && typeCount > 0) {
+      return {
+        kind: 'graphql',
+        source: resolvedPath,
+        weight: clamp01(0.25 + typeCount / 100),
+        value: typeCount,
+        detail: `types=${typeCount}`,
+        sourceKind: 'runtime',
+        confidence: 0.8,
+        provenance: [
+          {
+            sourceKind: 'runtime',
+            adapter: 'graphql-introspection',
+            detail: 'GraphQL introspection schema',
+            confidence: 0.8,
+          },
+        ],
+      };
+    }
+  }
+
+  const source = readTextIfPresent(resolvedPath);
+  if (!source) return null;
+  const operationFields = (source.match(/^\s+[A-Za-z0-9_]+\s*(?:\(|:)/gm) ?? []).length;
+  const rootTypes = (source.match(/\btype\s+(Query|Mutation|Subscription)\b/g) ?? []).length;
+  const value = operationFields + rootTypes;
+  if (value === 0) return null;
+
+  return {
+    kind: 'graphql',
+    source: resolvedPath,
+    weight: clamp01(0.25 + value / 80),
+    value,
+    detail: `schemaNodes=${value}`,
+    sourceKind: 'runtime',
+    confidence: 0.74,
+    provenance: [
+      {
+        sourceKind: 'runtime',
+        adapter: 'graphql-schema',
+        detail: 'GraphQL SDL artifact',
+        confidence: 0.74,
+      },
+    ],
+  };
+}
+
+function telemetrySignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
+  const configuredPath = config.runtime?.telemetrySummaryPath;
+  if (!config.runtime?.enabled || !configuredPath) return null;
+
+  const resolvedPath = path.isAbsolute(configuredPath)
+    ? configuredPath
+    : path.join(manifest.path, configuredPath);
+  const json = readJsonIfPresent(resolvedPath);
+  if (!json) return null;
+
+  const requests = numberLike(json, ['requests', 'requestCount', 'totalRequests']) ?? 0;
+  const errors = numberLike(json, ['errors', 'errorCount', 'totalErrors']) ?? 0;
+  const incidents = numberLike(json, ['incidents', 'incidentCount']) ?? 0;
+  const p95Ms = numberLike(json, ['p95Ms', 'latencyP95Ms', 'durationP95Ms']) ?? 0;
+  if (requests === 0 && errors === 0 && incidents === 0 && p95Ms === 0) return null;
+
+  const errorRate = requests > 0 ? errors / requests : clamp01(errors / 10);
+  const weight = clamp01(
+    0.2 +
+      clamp01(requests / 10_000) * 0.4 +
+      clamp01(errorRate * 5) * 0.25 +
+      clamp01(incidents / 10) * 0.1 +
+      clamp01(p95Ms / 2_000) * 0.05,
+  );
+
+  return {
+    kind: 'telemetry',
+    source: resolvedPath,
+    weight,
+    value: requests,
+    detail: `requests=${requests},errors=${errors},incidents=${incidents},p95Ms=${p95Ms}`,
+    sourceKind: 'runtime',
+    confidence: 0.83,
+    provenance: [
+      {
+        sourceKind: 'runtime',
+        adapter: 'telemetry-summary',
+        detail: 'Telemetry summary artifact',
+        confidence: 0.83,
+      },
+    ],
+  };
+}
+
+function traceSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
+  const configuredPath = config.runtime?.traceSummaryPath;
+  if (!config.runtime?.enabled || !configuredPath) return null;
+
+  const resolvedPath = path.isAbsolute(configuredPath)
+    ? configuredPath
+    : path.join(manifest.path, configuredPath);
+  const json = readJsonIfPresent(resolvedPath);
+  if (!json) return null;
+
+  const spans = numberLike(json, ['spans', 'spanCount', 'traceCount']) ?? 0;
+  const slowSpans = numberLike(json, ['slowSpans', 'slowSpanCount']) ?? 0;
+  const errors = numberLike(json, ['errors', 'errorCount']) ?? 0;
+  const p95Ms = numberLike(json, ['p95Ms', 'durationP95Ms']) ?? 0;
+  if (spans === 0 && slowSpans === 0 && errors === 0 && p95Ms === 0) return null;
+
+  const weight = clamp01(
+    0.2 +
+      clamp01(spans / 20_000) * 0.35 +
+      clamp01(slowSpans / Math.max(1, spans / 10 || 1)) * 0.25 +
+      clamp01(errors / Math.max(1, spans / 20 || 1)) * 0.1 +
+      clamp01(p95Ms / 2_500) * 0.1,
+  );
+
+  return {
+    kind: 'trace',
+    source: resolvedPath,
+    weight,
+    value: spans,
+    detail: `spans=${spans},slowSpans=${slowSpans},errors=${errors},p95Ms=${p95Ms}`,
+    sourceKind: 'runtime',
+    confidence: 0.81,
+    provenance: [
+      {
+        sourceKind: 'runtime',
+        adapter: 'trace-summary',
+        detail: 'Trace summary artifact',
+        confidence: 0.81,
+      },
+    ],
+  };
+}
+
 function artifactPresenceSignal(
   manifest: RepoManifest,
   config: OmniLinkConfig,
@@ -199,10 +441,14 @@ export function collectRuntimeSignals(
     coverageSignal(manifest),
     externalCoverageSignal(manifest, config),
     testResultsSignal(manifest, config),
-    artifactPresenceSignal(manifest, config, 'openApiPath', 'openapi', 0.65),
-    artifactPresenceSignal(manifest, config, 'graphQlSchemaPath', 'graphql', 0.65),
-    artifactPresenceSignal(manifest, config, 'telemetrySummaryPath', 'telemetry', 0.75),
-    artifactPresenceSignal(manifest, config, 'traceSummaryPath', 'trace', 0.7),
+    openApiSignal(manifest, config) ??
+      artifactPresenceSignal(manifest, config, 'openApiPath', 'openapi', 0.65),
+    graphQlSignal(manifest, config) ??
+      artifactPresenceSignal(manifest, config, 'graphQlSchemaPath', 'graphql', 0.65),
+    telemetrySignal(manifest, config) ??
+      artifactPresenceSignal(manifest, config, 'telemetrySummaryPath', 'telemetry', 0.75),
+    traceSignal(manifest, config) ??
+      artifactPresenceSignal(manifest, config, 'traceSummaryPath', 'trace', 0.7),
   ].filter((entry): entry is RuntimeSignal => entry !== null);
 
   return signals;

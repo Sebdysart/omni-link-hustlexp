@@ -61,8 +61,13 @@ describe('scripts/full-stress', () => {
       maxRuntimeMs: 30000,
     });
 
-    expect(summary.engine.repos).toBe(4);
+    expect(summary.engine.repos).toBe(8);
+    expect(summary.engine.languages).toEqual(
+      expect.arrayContaining(['go', 'graphql', 'java', 'python', 'swift', 'typescript']),
+    );
     expect(summary.engine.liveMetadataFetches).toBe(1);
+    expect(summary.engine.applyLedgerEntries).toBeGreaterThan(0);
+    expect(summary.engine.rollbackLedgerEntries).toBeGreaterThan(0);
     expect(summary.engine.uncommittedImpactPaths).toBeGreaterThan(0);
     expect(summary.cli.repos).toBe(2);
     expect(summary.maxTier.gitlabNegotiatedAnnotations).toBe(0);

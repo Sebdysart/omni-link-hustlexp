@@ -362,6 +362,12 @@ describe('GitLab review provider', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => [],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         status: 201,
         statusText: 'Created',
         json: async () => ({
@@ -414,6 +420,13 @@ describe('GitLab review provider', () => {
     });
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
+      'https://gitlab.test/api/v4/projects/acme%2Fplatform/merge_requests/42/notes?per_page=100',
+      expect.objectContaining({
+        method: 'GET',
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
       'https://gitlab.test/api/v4/projects/acme%2Fplatform/merge_requests/42/notes',
       expect.objectContaining({
         method: 'POST',
@@ -421,14 +434,71 @@ describe('GitLab review provider', () => {
       }),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      2,
+      3,
       'https://gitlab.test/api/v4/projects/acme%2Fplatform/statuses/abc123',
       expect.objectContaining({
         method: 'POST',
       }),
     );
-    const secondBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
-    expect(secondBody.state).toBe('failed');
-    expect(secondBody.name).toBe('omni-link status');
+    const thirdBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body));
+    expect(thirdBody.state).toBe('failed');
+    expect(thirdBody.name).toBe('omni-link status');
+  });
+
+  it('updates the existing omni-link GitLab note instead of creating duplicates', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => [
+          {
+            id: 101,
+            body: '<!-- omni-link review -->\nold review body',
+            web_url: 'https://gitlab.test/acme/platform/-/merge_requests/42#note_101',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          id: 101,
+          web_url: 'https://gitlab.test/acme/platform/-/merge_requests/42#note_101',
+        }),
+      });
+    const transport = createGitLabApiReviewTransport({
+      apiUrl: 'https://gitlab.test/api/v4',
+      token: 'test-token',
+      fetchImpl,
+    });
+    const replayOutput = buildGitLabReviewReplayOutput(makeArtifact());
+
+    const comment = await transport.publishComment({
+      target: {
+        owner: 'acme',
+        repo: 'platform',
+        pullRequestNumber: 42,
+        headSha: 'abc123',
+      },
+      body: replayOutput.commentBody,
+    });
+
+    expect(comment).toEqual({
+      kind: 'comment',
+      status: 'published',
+      id: '101',
+      url: 'https://gitlab.test/acme/platform/-/merge_requests/42#note_101',
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      'https://gitlab.test/api/v4/projects/acme%2Fplatform/merge_requests/42/notes/101',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ body: replayOutput.commentBody }),
+      }),
+    );
   });
 });

@@ -364,6 +364,12 @@ describe('GitHub review provider', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => [],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         status: 201,
         statusText: 'Created',
         json: async () => ({
@@ -416,6 +422,13 @@ describe('GitHub review provider', () => {
     });
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
+      'https://api.github.test/repos/acme/platform/issues/42/comments?per_page=100',
+      expect.objectContaining({
+        method: 'GET',
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
       'https://api.github.test/repos/acme/platform/issues/42/comments',
       expect.objectContaining({
         method: 'POST',
@@ -423,15 +436,15 @@ describe('GitHub review provider', () => {
       }),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      2,
+      3,
       'https://api.github.test/repos/acme/platform/check-runs',
       expect.objectContaining({
         method: 'POST',
       }),
     );
-    const secondBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
-    expect(secondBody.head_sha).toBe('abc123');
-    expect(secondBody.output.annotations[0]).toEqual({
+    const thirdBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body));
+    expect(thirdBody.head_sha).toBe('abc123');
+    expect(thirdBody.output.annotations[0]).toEqual({
       path: 'src/client.ts',
       start_line: 14,
       end_line: 14,
@@ -439,5 +452,133 @@ describe('GitHub review provider', () => {
       title: 'client impacted by backend',
       message: 'consumes GET /api/users (trigger: src/routes/users.ts)',
     });
+  });
+
+  it('falls back to commit status publishing when GitHub check-runs are forbidden', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => [],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        statusText: 'Created',
+        json: async () => ({
+          id: 101,
+          html_url: 'https://github.test/acme/platform/pull/42#issuecomment-101',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: async () => ({ message: 'Resource not accessible by personal access token' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        statusText: 'Created',
+        json: async () => ({
+          id: 303,
+          target_url: 'https://github.com/acme/platform/commit/abc123',
+        }),
+      });
+    const transport = createGitHubApiReviewTransport({
+      apiUrl: 'https://api.github.test',
+      token: 'test-token',
+      fetchImpl,
+    });
+    const replayOutput = buildGitHubReviewReplayOutput(makeArtifact());
+    const target = {
+      owner: 'acme',
+      repo: 'platform',
+      pullRequestNumber: 42,
+      headSha: 'abc123',
+    };
+
+    const comment = await transport.publishComment({
+      target,
+      body: replayOutput.commentBody,
+    });
+    const checkRun = await transport.publishCheckRun({
+      target,
+      checkRun: replayOutput.checkRun,
+    });
+
+    expect(comment.status).toBe('published');
+    expect(checkRun).toEqual({
+      kind: 'check-run',
+      status: 'published',
+      id: '303',
+      url: 'https://github.com/acme/platform/commit/abc123',
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
+      'https://api.github.test/repos/acme/platform/statuses/abc123',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+  });
+
+  it('updates the existing omni-link GitHub comment instead of creating duplicates', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => [
+          {
+            id: 101,
+            body: '<!-- omni-link review -->\nold review body',
+            html_url: 'https://github.test/acme/platform/pull/42#issuecomment-101',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          id: 101,
+          html_url: 'https://github.test/acme/platform/pull/42#issuecomment-101',
+        }),
+      });
+    const transport = createGitHubApiReviewTransport({
+      apiUrl: 'https://api.github.test',
+      token: 'test-token',
+      fetchImpl,
+    });
+    const replayOutput = buildGitHubReviewReplayOutput(makeArtifact());
+
+    const comment = await transport.publishComment({
+      target: {
+        owner: 'acme',
+        repo: 'platform',
+        pullRequestNumber: 42,
+        headSha: 'abc123',
+      },
+      body: replayOutput.commentBody,
+    });
+
+    expect(comment).toEqual({
+      kind: 'comment',
+      status: 'published',
+      id: '101',
+      url: 'https://github.test/acme/platform/pull/42#issuecomment-101',
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.test/repos/acme/platform/issues/comments/101',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ body: replayOutput.commentBody }),
+      }),
+    );
   });
 });

@@ -36,13 +36,15 @@
     "stress:full": "node scripts/full-stress.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:providers:live": "vitest run tests/providers/live.integration.test.ts",
+    "test:providers:live:if-configured": "node scripts/live-provider-test-gate.mjs",
     "test:watch": "vitest",
     "lint": "eslint . && tsc --noEmit",
     "prepare": "husky",
     "review:pr": "node dist/cli.js review-pr --base main --head HEAD",
     "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
     "verify:max": "npm run verify && npm run smoke:max && npm run smoke:contracts && npm run smoke:package",
-    "verify:stress": "npm run verify:max && npm run stress:full"
+    "verify:stress": "npm run verify:max && npm run stress:full && npm run test:providers:live:if-configured"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -71,6 +73,7 @@
   },
   "dependencies": {
     "gpt-tokenizer": "^3.4.0",
+    "graphql": "^16.13.1",
     "ignore": "^7.0.5",
     "p-limit": "^7.1.1",
     "sql.js": "^1.14.1",

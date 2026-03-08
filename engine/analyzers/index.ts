@@ -1,8 +1,16 @@
 import type { OmniLinkConfig, RepoConfig } from '../types.js';
+import { graphQlSemanticAnalyzer } from './graphql-semantic.js';
 import type { RepoAnalyzer, RepoSemanticAnalysis } from './types.js';
+import { sourceSemanticAnalyzer } from './source-semantic.js';
+import { toolchainSemanticAnalyzer } from './toolchain-semantic.js';
 import { typeScriptSemanticAnalyzer } from './typescript-semantic.js';
 
-const ANALYZERS: RepoAnalyzer[] = [typeScriptSemanticAnalyzer];
+const ANALYZERS: RepoAnalyzer[] = [
+  typeScriptSemanticAnalyzer,
+  toolchainSemanticAnalyzer,
+  graphQlSemanticAnalyzer,
+  sourceSemanticAnalyzer,
+];
 
 export interface AnalyzerSelection {
   analysis: RepoSemanticAnalysis | null;
@@ -19,14 +27,20 @@ export async function analyzeRepoSemantics(
     return { analysis: null, preferSemantic: false };
   }
 
-  const analyzer = ANALYZERS.find((candidate) => candidate.supports(repo));
-  if (!analyzer) {
+  if (semanticConfig.languages && !semanticConfig.languages.includes(repo.language as never)) {
     return { analysis: null, preferSemantic: false };
   }
 
-  const analysis = await analyzer.analyzeRepo(repo, filePaths);
-  return {
-    analysis,
-    preferSemantic: semanticConfig.preferSemantic ?? false,
-  };
+  for (const analyzer of ANALYZERS) {
+    if (!analyzer.supports(repo)) continue;
+    const analysis = await analyzer.analyzeRepo(repo, filePaths);
+    if (analysis) {
+      return {
+        analysis,
+        preferSemantic: semanticConfig.preferSemantic ?? false,
+      };
+    }
+  }
+
+  return { analysis: null, preferSemantic: false };
 }

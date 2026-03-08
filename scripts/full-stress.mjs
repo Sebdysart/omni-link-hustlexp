@@ -204,7 +204,7 @@ function createDirectEngineConfig(root, repos, options = {}) {
         enabled: true,
         preferSemantic: true,
         confidenceThreshold: 0.6,
-        languages: ['typescript', 'tsx', 'javascript'],
+        languages: ['typescript', 'tsx', 'javascript', 'python', 'go', 'graphql', 'java', 'swift'],
       },
       runtimeIngestion: {
         enabled: true,
@@ -232,12 +232,20 @@ async function runEngineStress(options = {}) {
     const webDir = path.join(root, 'web-client');
     const adminDir = path.join(root, 'admin-client');
     const goDir = path.join(root, 'go-service');
+    const pythonDir = path.join(root, 'python-service');
+    const graphqlDir = path.join(root, 'graphql-contracts');
+    const javaDir = path.join(root, 'java-service');
+    const swiftDir = path.join(root, 'swift-sdk');
 
     for (const [repoDir, email, name] of [
       [backendDir, 'backend@example.com', 'Backend Stress'],
       [webDir, 'web@example.com', 'Web Stress'],
       [adminDir, 'admin@example.com', 'Admin Stress'],
       [goDir, 'go@example.com', 'Go Stress'],
+      [pythonDir, 'python@example.com', 'Python Stress'],
+      [graphqlDir, 'graphql@example.com', 'GraphQL Stress'],
+      [javaDir, 'java@example.com', 'Java Stress'],
+      [swiftDir, 'swift@example.com', 'Swift Stress'],
     ]) {
       fs.mkdirSync(repoDir, { recursive: true });
       initRepo(repoDir, email, name);
@@ -332,6 +340,125 @@ func GetUser() User {
     commitAll(goDir, 'go init');
 
     writeFile(
+      pythonDir,
+      'app/models.py',
+      `
+class User:
+    id: str
+    email: str
+`,
+    );
+    writeFile(
+      pythonDir,
+      'app/api.py',
+      `
+from .models import User
+
+@app.get("/api/python-users")
+def list_users() -> list[User]:
+    return []
+`,
+    );
+    writeCoverage(pythonDir, 88);
+    writeTestResults(pythonDir, 15, 0);
+    commitAll(pythonDir, 'python init');
+
+    writeFile(
+      graphqlDir,
+      'schema.graphql',
+      `
+type Query {
+  product(id: ID!): Product
+}
+
+type Product {
+  id: ID!
+  name: String!
+  owner: User
+}
+
+type User {
+  id: ID!
+  email: String!
+}
+
+input UpdateProductInput {
+  name: String!
+}
+`,
+    );
+    writeFile(
+      graphqlDir,
+      'operations.graphql',
+      `
+query GetProduct($id: ID!) {
+  product(id: $id) {
+    id
+    name
+  }
+}
+`,
+    );
+    writeCoverage(graphqlDir, 92);
+    writeTestResults(graphqlDir, 12, 0);
+    commitAll(graphqlDir, 'graphql init');
+
+    writeFile(
+      javaDir,
+      'src/main/java/com/acme/models/User.java',
+      `
+package com.acme.models;
+
+public record User(String id, String email) {}
+`,
+    );
+    writeFile(
+      javaDir,
+      'src/main/java/com/acme/api/UserController.java',
+      `
+package com.acme.api;
+
+import com.acme.models.User;
+
+@RequestMapping("/api/java")
+public class UserController {
+  @GetMapping("/users")
+  public User listUsers() {
+    return new User("1", "java@example.com");
+  }
+}
+`,
+    );
+    writeCoverage(javaDir, 84);
+    writeTestResults(javaDir, 11, 0);
+    commitAll(javaDir, 'java init');
+
+    writeFile(
+      swiftDir,
+      'Sources/Models/User.swift',
+      `
+struct User {
+  let id: String
+  let email: String
+}
+`,
+    );
+    writeFile(
+      swiftDir,
+      'Sources/Services/UserService.swift',
+      `
+struct UserService {
+  func loadUsers() -> [User] {
+    [User(id: "1", email: "swift@example.com")]
+  }
+}
+`,
+    );
+    writeCoverage(swiftDir, 83);
+    writeTestResults(swiftDir, 9, 0);
+    commitAll(swiftDir, 'swift init');
+
+    writeFile(
       backendDir,
       'src/routes/users.ts',
       `export interface User {
@@ -351,6 +478,10 @@ app.get('/api/users', (_req, res) => res.json({ users: [{ id: '1', email: 'user@
       { name: 'web-client', path: webDir, language: 'typescript', role: 'frontend' },
       { name: 'admin-client', path: adminDir, language: 'typescript', role: 'frontend' },
       { name: 'go-service', path: goDir, language: 'go', role: 'backend' },
+      { name: 'python-service', path: pythonDir, language: 'python', role: 'backend' },
+      { name: 'graphql-contracts', path: graphqlDir, language: 'graphql', role: 'schema' },
+      { name: 'java-service', path: javaDir, language: 'java', role: 'backend' },
+      { name: 'swift-sdk', path: swiftDir, language: 'swift', role: 'sdk' },
     ]);
 
     const scanResult = await engine.scan(config);
@@ -465,9 +596,9 @@ app.get('/api/users', (_req, res) => res.json({ users: [{ id: '1', email: 'user@
       }
     }
 
-    assert(scanResult.manifests.length === 4, 'engine stress scan should include all repos');
+    assert(scanResult.manifests.length === 8, 'engine stress scan should include all repos');
     assert(
-      refreshed.manifests.length === 4,
+      refreshed.manifests.length === 8,
       'refreshDaemonState should preserve the full repo set',
     );
     assert(watchStatus.running === true, 'watch once should report a running daemon state');
@@ -492,6 +623,7 @@ app.get('/api/users', (_req, res) => res.json({ users: [{ id: '1', email: 'user@
 
     const metrics = {
       repos: scanResult.manifests.length,
+      languages: [...new Set(scanResult.manifests.map((manifest) => manifest.language))].sort(),
       bridges: scanResult.graph.bridges.length,
       watchRunning: watchStatus.running,
       overallHealth: health.overall,
@@ -504,6 +636,8 @@ app.get('/api/users', (_req, res) => res.json({ users: [{ id: '1', email: 'user@
       githubPublishMode: publishGitHub.mode,
       gitlabPublishMode: publishGitLab.mode,
       dryRunApply: apply.executed,
+      applyLedgerEntries: apply.ledger.length,
+      rollbackLedgerEntries: rollback.ledger.length,
       rollbackBranches: rollback.branches.length,
       liveMetadataFetches,
       tokenCount: scanResult.context.digest.tokenCount,

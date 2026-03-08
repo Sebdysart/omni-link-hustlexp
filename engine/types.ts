@@ -115,7 +115,9 @@ export interface SemanticAnalysisConfig {
   enabled?: boolean;
   preferSemantic?: boolean;
   confidenceThreshold?: number;
-  languages?: Array<'typescript' | 'tsx' | 'javascript'>;
+  languages?: Array<
+    'typescript' | 'tsx' | 'javascript' | 'python' | 'go' | 'graphql' | 'java' | 'swift'
+  >;
 }
 
 export interface MaxTierConfig {

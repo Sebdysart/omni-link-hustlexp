@@ -150,7 +150,18 @@ const DEFAULT_MAX_TIER = {
     enabled: false,
     preferSemantic: false,
     confidenceThreshold: 0.6,
-    languages: ['typescript', 'tsx', 'javascript'] as Array<'typescript' | 'tsx' | 'javascript'>,
+    languages: [
+      'typescript',
+      'tsx',
+      'javascript',
+      'python',
+      'go',
+      'graphql',
+      'java',
+      'swift',
+    ] as Array<
+      'typescript' | 'tsx' | 'javascript' | 'python' | 'go' | 'graphql' | 'java' | 'swift'
+    >,
   },
   runtimeIngestion: {
     enabled: false,
@@ -295,7 +306,18 @@ export const omniLinkConfigSchema = z.object({
             .max(1)
             .default(DEFAULT_MAX_TIER.semanticAnalysis.confidenceThreshold),
           languages: z
-            .array(z.enum(['typescript', 'tsx', 'javascript']))
+            .array(
+              z.enum([
+                'typescript',
+                'tsx',
+                'javascript',
+                'python',
+                'go',
+                'graphql',
+                'java',
+                'swift',
+              ]),
+            )
             .min(1)
             .default(DEFAULT_MAX_TIER.semanticAnalysis.languages),
         })
