@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import * as crypto from 'node:crypto';
 
 import type {
   EcosystemGraph,
@@ -10,6 +11,14 @@ import type {
   RiskLevel,
   RiskReport,
 } from '../types.js';
+import { resolveReviewProvider } from '../providers/index.js';
+
+export interface ReviewSnapshotKey {
+  configSha: string;
+  branchSignature: string;
+  baseRef: string;
+  headRef: string;
+}
 
 function riskOrder(level: RiskLevel): number {
   switch (level) {
@@ -94,26 +103,57 @@ export function createReviewArtifact(
   };
 }
 
-function artifactPathFor(config: OmniLinkConfig): string {
-  const configured = config.github?.artifactPath ?? path.join('.omni-link', 'review-artifact.json');
-  return path.isAbsolute(configured) ? configured : path.join(process.cwd(), configured);
+function snapshotCachePathFor(config: OmniLinkConfig, key: ReviewSnapshotKey): string {
+  const provider = resolveReviewProvider(config);
+  const latestArtifactPath = provider.resolveArtifactPath(config);
+  const snapshotHash = crypto
+    .createHash('sha1')
+    .update(
+      JSON.stringify({
+        configSha: key.configSha,
+        branchSignature: key.branchSignature,
+        baseRef: key.baseRef,
+        headRef: key.headRef,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
+  const fileName = `${provider.id}-${snapshotHash}.json`;
+  return path.join(path.dirname(latestArtifactPath), 'review-snapshots', fileName);
 }
 
-export function saveReviewArtifact(config: OmniLinkConfig, artifact: ReviewArtifact): string {
-  const artifactPath = artifactPathFor(config);
+export function saveReviewArtifact(
+  config: OmniLinkConfig,
+  artifact: ReviewArtifact,
+  snapshotKey?: ReviewSnapshotKey,
+): string {
+  const provider = resolveReviewProvider(config);
+  const artifactPath = provider.resolveArtifactPath(config);
   fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
-  fs.writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), 'utf-8');
+  const serialized = provider.serializeArtifact(artifact);
+  fs.writeFileSync(artifactPath, serialized, 'utf-8');
+  if (snapshotKey) {
+    const snapshotPath = snapshotCachePathFor(config, snapshotKey);
+    fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+    fs.writeFileSync(snapshotPath, serialized, 'utf-8');
+  }
   return artifactPath;
 }
 
-export function loadReviewArtifact(config: OmniLinkConfig): ReviewArtifact | null {
-  const artifactPath = artifactPathFor(config);
+export function loadReviewArtifact(
+  config: OmniLinkConfig,
+  snapshotKey?: ReviewSnapshotKey,
+): ReviewArtifact | null {
+  const provider = resolveReviewProvider(config);
+  const artifactPath = snapshotKey
+    ? snapshotCachePathFor(config, snapshotKey)
+    : provider.resolveArtifactPath(config);
   if (!fs.existsSync(artifactPath)) {
     return null;
   }
 
   try {
-    return JSON.parse(fs.readFileSync(artifactPath, 'utf-8')) as ReviewArtifact;
+    return provider.deserializeArtifact(fs.readFileSync(artifactPath, 'utf-8'));
   } catch {
     return null;
   }
@@ -154,6 +194,27 @@ export function gitChangedFilesBetween(
   }
 
   return changedFiles;
+}
+
+export function gitResolveRefSha(config: OmniLinkConfig, ref: string): string | null {
+  const prioritizedRepos = [...config.repos].sort((left, right) => {
+    const leftPriority = left.name === config.github?.repo ? 0 : 1;
+    const rightPriority = right.name === config.github?.repo ? 0 : 1;
+    return leftPriority - rightPriority;
+  });
+
+  for (const repo of prioritizedRepos) {
+    try {
+      return execFileSync('git', ['-C', repo.path, 'rev-parse', ref], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 export function mergeRiskReports(base: RiskReport, decisionsBlocked: boolean): RiskReport {

@@ -1,0 +1,19 @@
+# omni-link review
+- Risk: high (72)
+- Refs: main -> feature/max-tier
+- Affected repos: backend, client
+- Contract mismatches: 1
+- Impact paths: 1
+- Planned changes: 1
+- Required approvals: 1
+- Policy blocks: 1
+- Risk reasons: breaking contract mismatches detected; runtime-weighted signals increased priority
+
+## Contract Mismatches
+- client:src/client.ts:14 <- backend:src/routes/users.ts:5 (breaking) Consumer client expects field 'plan' on User which provider backend does not provide
+
+## Impact Paths
+- backend:src/routes/users.ts -> client:src/client.ts:14 (breaking) consumes GET /api/users
+
+## Planned Changes
+- client: Sync contract for backend [high]

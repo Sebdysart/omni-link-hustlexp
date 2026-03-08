@@ -67,6 +67,7 @@ describe('config', () => {
     expect(config.repos).toHaveLength(1);
     expect(config.evolution.aggressiveness).toBe(DEFAULT_CONFIG.evolution.aggressiveness);
     expect(config.context.tokenBudget).toBe(DEFAULT_CONFIG.context.tokenBudget);
+    expect(config.reviewProvider).toBe(DEFAULT_CONFIG.reviewProvider);
   });
 
   it('normalizes legacy evolution category names', () => {
@@ -87,5 +88,27 @@ describe('config', () => {
     const configPath = path.join(tmpDir, '.omni-link.json');
     fs.writeFileSync(configPath, 'not json');
     expect(() => loadConfig(configPath)).toThrow();
+  });
+
+  it('loadConfig supports provider selection and GitLab defaults', () => {
+    const configPath = path.join(tmpDir, '.omni-link.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        repos: [{ name: 'test', path: '/tmp/test', language: 'typescript', role: 'backend' }],
+        reviewProvider: 'gitlab',
+        gitlab: {
+          enabled: true,
+          namespace: 'acme',
+          project: 'platform',
+        },
+      }),
+    );
+
+    const config = loadConfig(configPath);
+    expect(config.reviewProvider).toBe('gitlab');
+    expect(config.gitlab?.namespace).toBe('acme');
+    expect(config.gitlab?.project).toBe('platform');
+    expect(config.gitlab?.publishMode).toBe(DEFAULT_CONFIG.gitlab?.publishMode);
   });
 });

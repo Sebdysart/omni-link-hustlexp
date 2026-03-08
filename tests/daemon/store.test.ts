@@ -11,6 +11,7 @@ function createState(tag: string): StoredScanState {
   return {
     updatedAt: '2026-03-07T00:00:00.000Z',
     configSha: `sha-${tag}`,
+    branchSignature: `repo-${tag}:main:head-${tag}:000000000000`,
     manifests: [
       {
         repoId: `repo-${tag}`,
@@ -144,5 +145,27 @@ describe('GraphStateStore', () => {
     expect(loaded).toEqual(state);
     expect(header).toBe(SQLITE_HEADER);
     expect(fs.existsSync(legacyPath)).toBe(true);
+  });
+
+  it('stores and retrieves branch-specific snapshots independently', async () => {
+    const filePath = path.join(tmpDir, 'daemon-state.sqlite');
+    const mainState = createState('main');
+    const featureState = {
+      ...createState('feature'),
+      configSha: mainState.configSha,
+      branchSignature: 'repo-main:feature:head-feature:111111111111',
+    };
+    const store = new GraphStateStore(filePath);
+
+    await store.save(mainState);
+    await store.save(featureState);
+
+    expect(await store.loadSnapshot(mainState.configSha, mainState.branchSignature)).toEqual(
+      mainState,
+    );
+    expect(await store.loadSnapshot(featureState.configSha, featureState.branchSignature)).toEqual(
+      featureState,
+    );
+    expect(await store.load()).toEqual(featureState);
   });
 });

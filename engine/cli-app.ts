@@ -5,12 +5,14 @@ import {
   impactFromRefs,
   impactFromUncommitted,
   owners,
+  publishReview,
   reviewPr,
   rollback,
   scan,
   watch,
 } from './index.js';
 import { loadConfig, resolveConfigPath } from './config.js';
+import { defaultBaseRefForProvider } from './providers/index.js';
 import type { OmniLinkConfig } from './types.js';
 
 export const USAGE = `
@@ -27,6 +29,7 @@ Commands:
   watch     Build or refresh daemon-backed ecosystem state
   owners    Resolve repo ownership assignments
   review-pr Generate a PR review artifact with risk and execution planning
+  publish-review Publish the saved PR review artifact through the configured provider transport
   apply     Execute the generated automation plan (bounded by policy)
   rollback  Roll back the last generated automation plan
 
@@ -37,6 +40,8 @@ Options:
   --markdown              Shortcut for --format markdown
   --base <ref>            Base git ref for PR / branch-aware analysis
   --head <ref>            Head git ref for PR / branch-aware analysis
+  --pr <number>           Pull request number for publish-review
+  --head-sha <sha>        Explicit commit SHA for provider check publishing
   --once                  Run a single watch refresh and exit
   --help                  Show this help message
 
@@ -49,6 +54,7 @@ Examples:
   omni-link impact --base main --head HEAD
   omni-link watch --once
   omni-link review-pr --base main --head HEAD
+  omni-link publish-review --pr 42 --base main --head HEAD
 `.trim();
 
 export interface CliArgs {
@@ -57,6 +63,8 @@ export interface CliArgs {
   outputFormat: 'json' | 'markdown';
   baseRef: string | undefined;
   headRef: string | undefined;
+  prNumber: number | undefined;
+  headSha: string | undefined;
   once: boolean;
   help: boolean;
 }
@@ -73,6 +81,7 @@ export interface CliDeps {
   scan: typeof scan;
   watch: typeof watch;
   owners: typeof owners;
+  publishReview: typeof publishReview;
   impactFromRefs: typeof impactFromRefs;
   impactFromUncommitted: typeof impactFromUncommitted;
   health: typeof health;
@@ -94,6 +103,7 @@ const DEFAULT_DEPS: CliDeps = {
   scan,
   watch,
   owners,
+  publishReview,
   impactFromRefs,
   impactFromUncommitted,
   health,
@@ -109,6 +119,8 @@ export function parseArgs(argv: string[]): CliArgs {
   let outputFormat: 'json' | 'markdown' = 'json';
   let baseRef: string | undefined;
   let headRef: string | undefined;
+  let prNumber: number | undefined;
+  let headSha: string | undefined;
   let once = false;
   let help = false;
 
@@ -173,6 +185,30 @@ export function parseArgs(argv: string[]): CliArgs {
       continue;
     }
 
+    if (arg === '--pr') {
+      const next = argv[i + 1];
+      if (!next) {
+        throw new Error('Missing value for --pr');
+      }
+      const parsed = Number.parseInt(next, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`Invalid pull request number: ${next}`);
+      }
+      prNumber = parsed;
+      i++;
+      continue;
+    }
+
+    if (arg === '--head-sha') {
+      const next = argv[i + 1];
+      if (!next) {
+        throw new Error('Missing value for --head-sha');
+      }
+      headSha = next;
+      i++;
+      continue;
+    }
+
     if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -185,7 +221,7 @@ export function parseArgs(argv: string[]): CliArgs {
     throw new Error(`Unexpected argument: ${arg}`);
   }
 
-  return { command, configPath, outputFormat, baseRef, headRef, once, help };
+  return { command, configPath, outputFormat, baseRef, headRef, prNumber, headSha, once, help };
 }
 
 export function resolveCliConfig(
@@ -279,8 +315,24 @@ export async function runCli(
         const config = resolveCliConfig(args.configPath, deps);
         const result = await deps.reviewPr(
           config,
-          args.baseRef ?? config.github?.defaultBaseBranch ?? 'main',
+          args.baseRef ?? defaultBaseRefForProvider(config),
           args.headRef ?? 'HEAD',
+        );
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'publish-review': {
+        if (!args.prNumber) {
+          throw new Error('publish-review requires --pr <number>');
+        }
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.publishReview(
+          config,
+          args.prNumber,
+          args.baseRef ?? defaultBaseRefForProvider(config),
+          args.headRef ?? 'HEAD',
+          args.headSha,
         );
         io.stdout(JSON.stringify(result, null, 2));
         return 0;
@@ -290,7 +342,7 @@ export async function runCli(
         const config = resolveCliConfig(args.configPath, deps);
         const result = await deps.apply(
           config,
-          args.baseRef ?? config.github?.defaultBaseBranch ?? 'main',
+          args.baseRef ?? defaultBaseRefForProvider(config),
           args.headRef ?? 'HEAD',
         );
         io.stdout(JSON.stringify(result, null, 2));

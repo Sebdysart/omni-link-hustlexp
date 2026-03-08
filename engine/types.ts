@@ -4,6 +4,8 @@
 
 export type SourceKind = 'parser' | 'semantic' | 'runtime' | 'mixed';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+export type ReviewProviderId = 'github' | 'gitlab';
+export type ReviewPublishMode = 'dry-run' | 'replay' | 'github' | 'gitlab';
 
 export interface ProvenanceEntry {
   sourceKind: SourceKind;
@@ -55,6 +57,22 @@ export interface GitHubConfig {
   commentOnPr?: boolean;
   publishChecks?: boolean;
   artifactPath?: string;
+  publishMode?: 'dry-run' | 'replay' | 'github';
+  replayDirectory?: string;
+  apiUrl?: string;
+}
+
+export interface GitLabConfig {
+  enabled?: boolean;
+  namespace?: string;
+  project?: string;
+  defaultBaseBranch?: string;
+  commentOnMergeRequest?: boolean;
+  publishChecks?: boolean;
+  artifactPath?: string;
+  publishMode?: 'dry-run' | 'replay' | 'gitlab';
+  replayDirectory?: string;
+  apiUrl?: string;
 }
 
 export interface AutomationConfig {
@@ -109,6 +127,7 @@ export interface MaxTierConfig {
 
 export interface OmniLinkConfig {
   repos: RepoConfig[];
+  reviewProvider?: ReviewProviderId;
   evolution: {
     aggressiveness: 'aggressive' | 'moderate' | 'on-demand';
     maxSuggestionsPerSession: number;
@@ -131,6 +150,7 @@ export interface OmniLinkConfig {
   };
   daemon?: DaemonConfig;
   github?: GitHubConfig;
+  gitlab?: GitLabConfig;
   automation?: AutomationConfig;
   ownership?: OwnershipConfig;
   runtime?: RuntimeConfig;
@@ -446,6 +466,52 @@ export interface ReviewArtifact {
   risk: RiskReport;
   policyDecisions: PolicyDecision[];
   executionPlan?: ExecutionPlan;
+}
+
+export interface ReviewPublishTarget {
+  owner: string;
+  repo: string;
+  pullRequestNumber: number;
+  headSha?: string;
+}
+
+export interface ReviewProviderCapabilities {
+  supportsComments: boolean;
+  supportsChecks: boolean;
+  supportsMetadata: boolean;
+  maxAnnotationsPerCheck: number;
+  maxCommentBytes: number;
+}
+
+export interface ReviewProviderMetadata {
+  provider: ReviewProviderId;
+  state: 'open' | 'closed' | 'merged' | 'locked' | 'unknown';
+  title?: string;
+  url?: string;
+  headSha?: string;
+  sourceBranch?: string;
+  targetBranch?: string;
+  isDraft?: boolean;
+}
+
+export interface ReviewPublishRecord {
+  kind: 'comment' | 'check-run';
+  status: 'published' | 'skipped' | 'dry-run' | 'replayed';
+  id?: string;
+  url?: string;
+  path?: string;
+  reason?: string;
+}
+
+export interface ReviewPublishResult {
+  provider: string;
+  mode: ReviewPublishMode;
+  target: ReviewPublishTarget;
+  summary: string;
+  capabilities: ReviewProviderCapabilities;
+  metadata: ReviewProviderMetadata | null;
+  comment: ReviewPublishRecord;
+  checkRun: ReviewPublishRecord;
 }
 
 export interface DaemonStatus {

@@ -10,6 +10,7 @@ import type {
   OwnerAssignment,
   RepoManifest,
   ReviewArtifact,
+  ReviewPublishResult,
   EvolutionSuggestion,
 } from './types.js';
 import pLimit from 'p-limit';
@@ -19,10 +20,13 @@ import { buildEcosystemGraph } from './grapher/index.js';
 import { CacheManager } from './context/cache-manager.js';
 import { buildContext } from './context/index.js';
 import {
+  configSha,
   updateDaemonState,
   loadDaemonState,
   saveDaemonState,
   watchEcosystem,
+  branchSignatureFromManifests,
+  currentBranchSignature,
 } from './daemon/index.js';
 import { analyzeEvolution } from './evolution/index.js';
 import {
@@ -43,6 +47,7 @@ import { assertNotSimulateOnly } from './quality/simulate-guard.js';
 import {
   createReviewArtifact,
   gitChangedFilesBetween,
+  gitResolveRefSha,
   loadReviewArtifact,
   mergeRiskReports,
   saveReviewArtifact,
@@ -50,6 +55,7 @@ import {
 } from './review/index.js';
 import { attachRuntimeSignals, rankEvolutionSuggestions } from './runtime/index.js';
 import { scanRepo } from './scanner/index.js';
+import { defaultBaseRefForProvider, publishReviewArtifact } from './providers/index.js';
 import type { FileCache } from './scanner/index.js';
 import type { HealthScoreResult } from './quality/health-scorer.js';
 import type { ReferenceCheckResult } from './quality/reference-checker.js';
@@ -72,6 +78,7 @@ export type {
   SlopCheckResult,
   RuleCheckResult,
   ReviewArtifact,
+  ReviewPublishResult,
   OwnerAssignment,
   DaemonStatus,
   ExecutionPlan,
@@ -146,6 +153,7 @@ async function loadScanResult(config: OmniLinkConfig): Promise<ScanResult> {
     await saveDaemonState(config, {
       updatedAt: new Date().toISOString(),
       configSha: result.context.digest.configSha,
+      branchSignature: '',
       manifests: result.manifests,
       graph: result.graph,
       context: result.context,
@@ -225,10 +233,21 @@ export async function owners(config: OmniLinkConfig): Promise<OwnersResult> {
 
 export async function reviewPr(
   config: OmniLinkConfig,
-  baseRef: string = config.github?.defaultBaseBranch ?? 'main',
+  baseRef: string = defaultBaseRefForProvider(config),
   headRef = 'HEAD',
 ): Promise<ReviewArtifact> {
   const result = await loadScanResult(config);
+  const snapshotKey = {
+    configSha: result.context.digest.configSha,
+    branchSignature: branchSignatureFromManifests(result.manifests),
+    baseRef,
+    headRef,
+  };
+  const cachedArtifact = loadReviewArtifact(config, snapshotKey);
+  if (cachedArtifact) {
+    return cachedArtifact;
+  }
+
   const changedFiles = gitChangedFilesBetween(config, baseRef, headRef);
   const impactPaths = analyzeImpact(result.graph, changedFiles);
   const reviewGraph: EcosystemGraph = {
@@ -253,18 +272,20 @@ export async function reviewPr(
       risk: mergeRiskReports(risk, executionPlan.blocked),
     },
   );
-  saveReviewArtifact(config, artifact);
+  saveReviewArtifact(config, artifact, snapshotKey);
   return artifact;
 }
 
 export async function apply(
   config: OmniLinkConfig,
-  baseRef: string = config.github?.defaultBaseBranch ?? 'main',
+  baseRef: string = defaultBaseRefForProvider(config),
   headRef = 'HEAD',
 ): Promise<ExecutionResult> {
   const existingArtifact = loadReviewArtifact(config);
   const artifact =
-    existingArtifact?.executionPlan !== undefined
+    existingArtifact?.executionPlan !== undefined &&
+    existingArtifact.baseRef === baseRef &&
+    existingArtifact.headRef === headRef
       ? existingArtifact
       : await reviewPr(config, baseRef, headRef);
 
@@ -273,6 +294,34 @@ export async function apply(
   }
 
   return applyExecutionPlan(config, artifact.executionPlan);
+}
+
+export async function publishReview(
+  config: OmniLinkConfig,
+  pullRequestNumber: number,
+  baseRef: string = defaultBaseRefForProvider(config),
+  headRef = 'HEAD',
+  headSha?: string,
+): Promise<ReviewPublishResult> {
+  const artifact = await reviewPr(config, baseRef, headRef);
+  const resolvedHeadSha = headSha ?? gitResolveRefSha(config, headRef) ?? undefined;
+
+  return publishReviewArtifact(
+    config,
+    artifact,
+    {
+      pullRequestNumber,
+      headSha: resolvedHeadSha,
+    },
+    {
+      snapshotKey: {
+        configSha: configSha(config),
+        branchSignature: currentBranchSignature(config),
+        baseRef,
+        headRef,
+      },
+    },
+  );
 }
 
 export async function rollback(config: OmniLinkConfig): Promise<ExecutionResult> {

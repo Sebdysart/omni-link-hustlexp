@@ -108,6 +108,8 @@ export async function runMaxTierSmoke(options = {}) {
     const clientDir = path.join(root, 'client');
     const cacheDir = path.join(root, '.cache');
     const artifactPath = path.join(root, '.omni-link', 'review-artifact.json');
+    const gitlabArtifactPath = path.join(root, '.omni-link', 'review-artifact.gitlab.json');
+    const replayDirectory = path.join(root, '.omni-link', 'provider-replay');
     const daemonStatePath = path.join(root, '.omni-link', 'daemon-state.json');
     fs.mkdirSync(backendDir, { recursive: true });
     fs.mkdirSync(clientDir, { recursive: true });
@@ -199,101 +201,116 @@ app.post('/api/users', (_req, res) =>
     );
     commitAll(backendDir, 'backend contract change');
 
+    const baseConfig = {
+      repos: [
+        { name: 'backend', path: backendDir, language: 'typescript', role: 'backend' },
+        { name: 'client', path: clientDir, language: 'typescript', role: 'frontend' },
+      ],
+      evolution: {
+        aggressiveness: 'moderate',
+        maxSuggestionsPerSession: 5,
+        categories: ['feature', 'performance', 'security'],
+      },
+      quality: {
+        blockOnFailure: true,
+        requireTestsForNewCode: true,
+        conventionStrictness: 'strict',
+      },
+      context: {
+        tokenBudget: 700,
+        prioritize: 'api-surface-first',
+        includeRecentCommits: 10,
+      },
+      cache: {
+        directory: cacheDir,
+        maxAgeDays: 7,
+      },
+      daemon: {
+        enabled: true,
+        preferDaemon: true,
+        statePath: daemonStatePath,
+        pollIntervalMs: 250,
+        cacheRetentionDays: 7,
+        workspaceGroups: {
+          product: ['backend', 'client'],
+        },
+      },
+      github: {
+        enabled: true,
+        owner: 'acme',
+        repo: 'platform',
+        defaultBaseBranch: 'main',
+        artifactPath,
+        publishMode: 'replay',
+        replayDirectory,
+      },
+      gitlab: {
+        enabled: true,
+        namespace: 'acme',
+        project: 'platform',
+        defaultBaseBranch: 'main',
+        artifactPath: gitlabArtifactPath,
+        publishMode: 'replay',
+        replayDirectory,
+      },
+      automation: {
+        enabled: true,
+        branchPrefix: 'codex/omni-link',
+        createPullRequest: false,
+        retryLimit: 1,
+        allowedRiskTiers: ['low', 'medium', 'high'],
+        autoApplyRiskTiers: ['low', 'medium'],
+        dryRunByDefault: true,
+      },
+      ownership: {
+        enabled: true,
+        defaultOwner: 'platform-team',
+        rules: [
+          { owner: 'backend-team', kind: 'team', scope: 'repo', repo: 'backend' },
+          { owner: 'client-team', kind: 'team', scope: 'repo', repo: 'client' },
+          { owner: 'api-team', kind: 'team', scope: 'api', pattern: '/api/*' },
+        ],
+      },
+      runtime: {
+        enabled: true,
+        coverageSummaryPath: 'coverage/coverage-summary.json',
+        testResultsPath: 'test-results.json',
+      },
+      policies: {
+        enabled: true,
+        protectedBranches: ['main'],
+        requiredChecks: ['lint', 'test'],
+        requiredOwners: ['backend-team'],
+        maxAllowedRisk: 'high',
+        forbidDirectMainMutation: true,
+        forbidDestructiveChanges: true,
+      },
+      maxTier: {
+        enabled: true,
+        semanticAnalysis: {
+          enabled: true,
+          preferSemantic: true,
+          confidenceThreshold: 0.6,
+          languages: ['typescript', 'tsx', 'javascript'],
+        },
+        runtimeIngestion: {
+          enabled: true,
+        },
+        execution: {
+          enabled: true,
+        },
+      },
+      simulateOnly: false,
+    };
     const configPath = path.join(root, '.omni-link.json');
+    const gitlabConfigPath = path.join(root, '.omni-link.gitlab.json');
     fs.writeFileSync(
       configPath,
-      JSON.stringify(
-        {
-          repos: [
-            { name: 'backend', path: backendDir, language: 'typescript', role: 'backend' },
-            { name: 'client', path: clientDir, language: 'typescript', role: 'frontend' },
-          ],
-          evolution: {
-            aggressiveness: 'moderate',
-            maxSuggestionsPerSession: 5,
-            categories: ['feature', 'performance', 'security'],
-          },
-          quality: {
-            blockOnFailure: true,
-            requireTestsForNewCode: true,
-            conventionStrictness: 'strict',
-          },
-          context: {
-            tokenBudget: 700,
-            prioritize: 'api-surface-first',
-            includeRecentCommits: 10,
-          },
-          cache: {
-            directory: cacheDir,
-            maxAgeDays: 7,
-          },
-          daemon: {
-            enabled: true,
-            preferDaemon: true,
-            statePath: daemonStatePath,
-            pollIntervalMs: 250,
-            cacheRetentionDays: 7,
-            workspaceGroups: {
-              product: ['backend', 'client'],
-            },
-          },
-          github: {
-            enabled: false,
-            defaultBaseBranch: 'main',
-            artifactPath,
-          },
-          automation: {
-            enabled: true,
-            branchPrefix: 'codex/omni-link',
-            createPullRequest: false,
-            retryLimit: 1,
-            allowedRiskTiers: ['low', 'medium', 'high'],
-            autoApplyRiskTiers: ['low', 'medium'],
-            dryRunByDefault: true,
-          },
-          ownership: {
-            enabled: true,
-            defaultOwner: 'platform-team',
-            rules: [
-              { owner: 'backend-team', kind: 'team', scope: 'repo', repo: 'backend' },
-              { owner: 'client-team', kind: 'team', scope: 'repo', repo: 'client' },
-              { owner: 'api-team', kind: 'team', scope: 'api', pattern: '/api/*' },
-            ],
-          },
-          runtime: {
-            enabled: true,
-            coverageSummaryPath: 'coverage/coverage-summary.json',
-            testResultsPath: 'test-results.json',
-          },
-          policies: {
-            enabled: true,
-            protectedBranches: ['main'],
-            requiredChecks: ['lint', 'test'],
-            requiredOwners: ['backend-team'],
-            maxAllowedRisk: 'high',
-            forbidDirectMainMutation: true,
-            forbidDestructiveChanges: true,
-          },
-          maxTier: {
-            enabled: true,
-            semanticAnalysis: {
-              enabled: true,
-              preferSemantic: true,
-              confidenceThreshold: 0.6,
-              languages: ['typescript', 'tsx', 'javascript'],
-            },
-            runtimeIngestion: {
-              enabled: true,
-            },
-            execution: {
-              enabled: true,
-            },
-          },
-          simulateOnly: false,
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ ...baseConfig, reviewProvider: 'github' }, null, 2),
+    );
+    fs.writeFileSync(
+      gitlabConfigPath,
+      JSON.stringify({ ...baseConfig, reviewProvider: 'gitlab' }, null, 2),
     );
 
     const scan = parseJson(await executeCli(['scan', '--config', configPath]), 'scan');
@@ -306,6 +323,38 @@ app.post('/api/users', (_req, res) =>
     const review = parseJson(
       await executeCli(['review-pr', '--base', 'HEAD~1', '--head', 'HEAD', '--config', configPath]),
       'review-pr',
+    );
+    const repeatedReview = parseJson(
+      await executeCli(['review-pr', '--base', 'HEAD~1', '--head', 'HEAD', '--config', configPath]),
+      'review-pr replay',
+    );
+    const publishReview = parseJson(
+      await executeCli([
+        'publish-review',
+        '--pr',
+        '42',
+        '--base',
+        'HEAD~1',
+        '--head',
+        'HEAD',
+        '--config',
+        configPath,
+      ]),
+      'publish-review',
+    );
+    const publishReviewGitlab = parseJson(
+      await executeCli([
+        'publish-review',
+        '--pr',
+        '43',
+        '--base',
+        'HEAD~1',
+        '--head',
+        'HEAD',
+        '--config',
+        gitlabConfigPath,
+      ]),
+      'publish-review gitlab',
     );
     const apply = parseJson(
       await executeCli(['apply', '--base', 'HEAD~1', '--head', 'HEAD', '--config', configPath]),
@@ -324,7 +373,52 @@ app.post('/api/users', (_req, res) =>
       review.executionPlan && review.executionPlan.branchName,
       'review-pr should emit an execution plan',
     );
+    assert(
+      repeatedReview.generatedAt === review.generatedAt,
+      'review-pr should reuse the stored snapshot for identical refs',
+    );
+    assert(publishReview.mode === 'replay', 'publish-review should use replay mode in smoke');
+    assert(
+      publishReview.capabilities?.maxAnnotationsPerCheck === 50 && publishReview.metadata === null,
+      'GitHub publish-review should surface negotiated capabilities and replay metadata state',
+    );
+    assert(
+      publishReview.comment?.status === 'replayed' && publishReview.checkRun?.status === 'replayed',
+      'publish-review should emit replayed comment and check-run outputs',
+    );
+    assert(
+      fs.existsSync(publishReview.comment.path) && fs.existsSync(publishReview.checkRun.path),
+      'publish-review should persist replayed provider outputs',
+    );
+    assert(
+      publishReviewGitlab.provider === 'gitlab' && publishReviewGitlab.mode === 'replay',
+      'publish-review should select the configured GitLab provider',
+    );
+    assert(
+      publishReviewGitlab.capabilities?.maxAnnotationsPerCheck === 0 &&
+        publishReviewGitlab.metadata === null,
+      'GitLab publish-review should surface negotiated capabilities and replay metadata state',
+    );
+    assert(
+      publishReviewGitlab.comment?.status === 'replayed' &&
+        publishReviewGitlab.checkRun?.status === 'replayed',
+      'GitLab publish-review should emit replayed provider outputs',
+    );
+    assert(
+      fs.existsSync(publishReviewGitlab.comment.path) &&
+        fs.existsSync(publishReviewGitlab.checkRun.path),
+      'GitLab publish-review should persist replayed provider outputs',
+    );
+    const gitlabCheckRun = JSON.parse(fs.readFileSync(publishReviewGitlab.checkRun.path, 'utf8'));
+    assert(
+      Array.isArray(gitlabCheckRun.annotations) && gitlabCheckRun.annotations.length === 0,
+      'GitLab capability negotiation should strip unsupported annotations from replay output',
+    );
     assert(fs.existsSync(artifactPath), 'review-pr should persist the review artifact');
+    assert(
+      fs.existsSync(gitlabArtifactPath),
+      'GitLab publish-review should persist the review artifact',
+    );
     assert(apply.executed === false, 'apply should remain a dry run in smoke mode');
     assert(Array.isArray(rollback.branches), 'rollback should emit branch results');
 
@@ -335,6 +429,16 @@ app.post('/api/users', (_req, res) =>
       impactPaths: impact.length,
       reviewRisk: review.risk.overallRisk,
       plannedChanges: review.executionPlan.changes.length,
+      reusedReviewSnapshot: repeatedReview.generatedAt === review.generatedAt,
+      publishedReviewMode: publishReview.mode,
+      publishedCommentStatus: publishReview.comment.status,
+      publishedCheckStatus: publishReview.checkRun.status,
+      githubMaxAnnotationsPerCheck: publishReview.capabilities.maxAnnotationsPerCheck,
+      gitlabPublishedReviewMode: publishReviewGitlab.mode,
+      gitlabPublishedCommentStatus: publishReviewGitlab.comment.status,
+      gitlabPublishedCheckStatus: publishReviewGitlab.checkRun.status,
+      gitlabMaxAnnotationsPerCheck: publishReviewGitlab.capabilities.maxAnnotationsPerCheck,
+      gitlabNegotiatedAnnotations: gitlabCheckRun.annotations.length,
       dryRunApply: apply.executed,
       rollbackBranches: rollback.branches.length,
     };

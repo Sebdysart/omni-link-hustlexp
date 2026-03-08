@@ -127,11 +127,13 @@ export async function scanRepo(
   // are uncommitted or untracked changes the cached snapshot is stale.
   if (manifestCache) {
     const headSha = await gitExec(repoPath, ['rev-parse', 'HEAD']);
+    const branchName =
+      (await gitExec(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])) || 'detached';
     if (headSha) {
       const diffOutput = await gitExec(repoPath, ['status', '--porcelain']);
       const hasUncommittedChanges = diffOutput.trim().length > 0;
       if (!hasUncommittedChanges) {
-        const cached = manifestCache.getCachedManifest(name, headSha);
+        const cached = manifestCache.getCachedManifest(name, headSha, branchName);
         if (cached) {
           return cached;
         }
@@ -426,7 +428,12 @@ export async function scanRepo(
 
   // Store manifest in disk cache for next session warm-start
   if (manifestCache && manifest.gitState.headSha) {
-    manifestCache.setCachedManifest(name, manifest.gitState.headSha, manifest);
+    manifestCache.setCachedManifest(
+      name,
+      manifest.gitState.headSha,
+      manifest,
+      manifest.gitState.branch,
+    );
   }
 
   return manifest;

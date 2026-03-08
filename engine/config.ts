@@ -6,6 +6,7 @@ import type { OmniLinkConfig } from './types.js';
 import { parseConfig, safeParseConfig } from './config-validator.js';
 
 export const DEFAULT_CONFIG: Omit<OmniLinkConfig, 'repos'> = {
+  reviewProvider: 'github',
   evolution: {
     aggressiveness: 'aggressive',
     maxSuggestionsPerSession: 5,
@@ -39,6 +40,19 @@ export const DEFAULT_CONFIG: Omit<OmniLinkConfig, 'repos'> = {
     commentOnPr: true,
     publishChecks: true,
     artifactPath: path.join('.omni-link', 'review-artifact.json'),
+    publishMode: 'dry-run',
+    replayDirectory: path.join('.omni-link', 'provider-replay'),
+    apiUrl: 'https://api.github.com',
+  },
+  gitlab: {
+    enabled: false,
+    defaultBaseBranch: 'main',
+    commentOnMergeRequest: true,
+    publishChecks: true,
+    artifactPath: path.join('.omni-link', 'review-artifact.gitlab.json'),
+    publishMode: 'dry-run',
+    replayDirectory: path.join('.omni-link', 'provider-replay'),
+    apiUrl: 'https://gitlab.com/api/v4',
   },
   automation: {
     enabled: false,
@@ -120,12 +134,14 @@ export function loadConfig(configPath: string): OmniLinkConfig {
   const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   const merged = {
     ...raw,
+    reviewProvider: raw.reviewProvider ?? DEFAULT_CONFIG.reviewProvider,
     evolution: { ...DEFAULT_CONFIG.evolution, ...raw.evolution },
     quality: { ...DEFAULT_CONFIG.quality, ...raw.quality },
     context: { ...DEFAULT_CONFIG.context, ...raw.context },
     cache: { ...DEFAULT_CONFIG.cache, ...raw.cache },
     daemon: raw.daemon ? { ...DEFAULT_CONFIG.daemon, ...raw.daemon } : raw.daemon,
     github: raw.github ? { ...DEFAULT_CONFIG.github, ...raw.github } : raw.github,
+    gitlab: raw.gitlab ? { ...DEFAULT_CONFIG.gitlab, ...raw.gitlab } : raw.gitlab,
     automation: raw.automation
       ? { ...DEFAULT_CONFIG.automation, ...raw.automation }
       : raw.automation,

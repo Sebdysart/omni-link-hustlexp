@@ -30,7 +30,10 @@
     "format:check": "prettier --check .",
     "pack:check": "npm pack --dry-run",
     "smoke:cli": "node scripts/cli-smoke.mjs",
+    "smoke:contracts": "node scripts/contract-fixture-smoke.mjs",
     "smoke:max": "node scripts/max-tier-smoke.mjs",
+    "smoke:package": "node scripts/package-install-smoke.mjs",
+    "stress:full": "node scripts/full-stress.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
@@ -38,7 +41,8 @@
     "prepare": "husky",
     "review:pr": "node dist/cli.js review-pr --base main --head HEAD",
     "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
-    "verify:max": "npm run verify && npm run smoke:max"
+    "verify:max": "npm run verify && npm run smoke:max && npm run smoke:contracts && npm run smoke:package",
+    "verify:stress": "npm run verify:max && npm run stress:full"
   },
   "engines": {
     "node": ">=18.0.0"

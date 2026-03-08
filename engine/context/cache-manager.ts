@@ -9,7 +9,7 @@ import type { FileScanResult, RepoManifest } from '../types.js';
  *
  * Structure on disk:
  *   <cacheDir>/<repo>/files/<sha>.json   — per-file scan results
- *   <cacheDir>/<repo>/manifest-<headSha>.json — full repo manifests
+ *   <cacheDir>/<repo>/manifest-<branch>-<headSha>.json — full repo manifests
  *
  * On scan, check if file SHA matches cached SHA — skip if unchanged.
  */
@@ -59,8 +59,14 @@ export class CacheManager {
    * Retrieve a cached RepoManifest for a given repo and HEAD SHA.
    * Returns null if the manifest is not cached or the headSha doesn't match.
    */
-  getCachedManifest(repo: string, headSha: string): RepoManifest | null {
-    const cachePath = this.manifestCachePath(repo, headSha);
+  getCachedManifest(
+    repo: string,
+    headSha: string,
+    branchName: string = 'detached',
+  ): RepoManifest | null {
+    const cachePath =
+      this.findManifestCachePath(repo, headSha, branchName) ??
+      this.manifestCachePath(repo, headSha, branchName);
 
     if (!fs.existsSync(cachePath)) {
       return null;
@@ -78,8 +84,13 @@ export class CacheManager {
   /**
    * Store a RepoManifest in the cache, keyed by HEAD SHA.
    */
-  setCachedManifest(repo: string, headSha: string, manifest: RepoManifest): void {
-    const cachePath = this.manifestCachePath(repo, headSha);
+  setCachedManifest(
+    repo: string,
+    headSha: string,
+    manifest: RepoManifest,
+    branchName: string = 'detached',
+  ): void {
+    const cachePath = this.manifestCachePath(repo, headSha, branchName);
     const dir = path.dirname(cachePath);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(cachePath, JSON.stringify(manifest, null, 2), 'utf-8');
@@ -119,8 +130,36 @@ export class CacheManager {
     return path.join(this.repoCacheDir(repo), 'files', `${sha}.json`);
   }
 
-  private manifestCachePath(repo: string, headSha: string): string {
-    return path.join(this.repoCacheDir(repo), `manifest-${headSha}.json`);
+  private manifestCachePath(repo: string, headSha: string, branchName: string): string {
+    return path.join(
+      this.repoCacheDir(repo),
+      `manifest-${this.sanitize(branchName)}-${headSha}.json`,
+    );
+  }
+
+  private findManifestCachePath(repo: string, headSha: string, branchName: string): string | null {
+    const directPath = this.manifestCachePath(repo, headSha, branchName);
+    if (fs.existsSync(directPath)) {
+      return directPath;
+    }
+
+    if (branchName !== 'detached') {
+      return null;
+    }
+
+    const repoDir = this.repoCacheDir(repo);
+    if (!fs.existsSync(repoDir)) {
+      return null;
+    }
+
+    const suffix = `-${headSha}.json`;
+    for (const entry of fs.readdirSync(repoDir)) {
+      if (entry.startsWith('manifest-') && entry.endsWith(suffix)) {
+        return path.join(repoDir, entry);
+      }
+    }
+
+    return null;
   }
 
   /**

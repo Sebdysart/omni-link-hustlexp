@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   apply,
+  evolve,
+  health,
   impactFromRefs,
+  impactFromUncommitted,
   owners,
   publishReview,
   reviewPr,
@@ -14,7 +17,6 @@ import {
   watch,
 } from '../../engine/index.js';
 import { loadConfig, resolveConfigPath } from '../../engine/config.js';
-import { evolve, health, impactFromUncommitted } from '../../engine/index.js';
 import type { CliDeps, CliIo } from '../../engine/cli-app.js';
 import { runCli } from '../../engine/cli-app.js';
 
@@ -53,29 +55,18 @@ function createSourceCliExecutor(repoRoot: string) {
   };
 }
 
-describe('scripts/max-tier-smoke', () => {
-  it('runs the max-tier flow against the source CLI and engine', async () => {
-    const { runMaxTierSmoke } = await import('../../scripts/max-tier-smoke.mjs');
-    const metrics = await runMaxTierSmoke({
-      scratchRoot: path.join(os.tmpdir(), 'omni-link-max-tier-smoke-tests'),
+describe('scripts/contract-fixture-smoke', () => {
+  it('locks the public command contracts against committed fixtures', async () => {
+    const { runContractFixtureSmoke } = await import('../../scripts/contract-fixture-smoke.mjs');
+    const metrics = await runContractFixtureSmoke({
+      scratchRoot: path.join(os.tmpdir(), 'omni-link-contract-fixture-tests'),
       executeCli: createSourceCliExecutor(process.cwd()),
       logger: () => undefined,
     });
 
-    expect(metrics.repos).toBe(2);
-    expect(metrics.ownerCount).toBeGreaterThan(0);
-    expect(metrics.watchRunning).toBe(true);
-    expect(metrics.plannedChanges).toBeGreaterThan(0);
-    expect(metrics.reusedReviewSnapshot).toBe(true);
-    expect(metrics.publishedReviewMode).toBe('replay');
-    expect(metrics.publishedCommentStatus).toBe('replayed');
-    expect(metrics.publishedCheckStatus).toBe('replayed');
-    expect(metrics.githubMaxAnnotationsPerCheck).toBe(50);
-    expect(metrics.gitlabPublishedReviewMode).toBe('replay');
-    expect(metrics.gitlabPublishedCommentStatus).toBe('replayed');
-    expect(metrics.gitlabPublishedCheckStatus).toBe('replayed');
-    expect(metrics.gitlabMaxAnnotationsPerCheck).toBe(0);
-    expect(metrics.gitlabNegotiatedAnnotations).toBe(0);
-    expect(metrics.dryRunApply).toBe(false);
+    expect(metrics.basicCommandsLocked).toBe(5);
+    expect(metrics.maxCommandsLocked).toBe(6);
+    expect(metrics.markdownSections).toBeGreaterThan(4);
+    expect(metrics.reviewPlanKeys).toBeGreaterThan(5);
   }, 45000);
 });

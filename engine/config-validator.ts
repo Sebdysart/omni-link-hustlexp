@@ -98,6 +98,20 @@ const DEFAULT_GITHUB = {
   commentOnPr: true,
   publishChecks: true,
   artifactPath: '.omni-link/review-artifact.json',
+  publishMode: 'dry-run' as const,
+  replayDirectory: '.omni-link/provider-replay',
+  apiUrl: 'https://api.github.com',
+};
+
+const DEFAULT_GITLAB = {
+  enabled: false,
+  defaultBaseBranch: 'main',
+  commentOnMergeRequest: true,
+  publishChecks: true,
+  artifactPath: '.omni-link/review-artifact.gitlab.json',
+  publishMode: 'dry-run' as const,
+  replayDirectory: '.omni-link/provider-replay',
+  apiUrl: 'https://gitlab.com/api/v4',
 };
 
 const DEFAULT_AUTOMATION = {
@@ -148,6 +162,7 @@ const DEFAULT_MAX_TIER = {
 
 export const omniLinkConfigSchema = z.object({
   repos: z.array(repoConfigSchema).min(1).max(10),
+  reviewProvider: z.enum(['github', 'gitlab']).default('github'),
   evolution: z
     .object({
       aggressiveness: z.enum(['aggressive', 'moderate', 'on-demand']).default('aggressive'),
@@ -202,6 +217,23 @@ export const omniLinkConfigSchema = z.object({
       commentOnPr: z.boolean().default(DEFAULT_GITHUB.commentOnPr),
       publishChecks: z.boolean().default(DEFAULT_GITHUB.publishChecks),
       artifactPath: z.string().min(1).default(DEFAULT_GITHUB.artifactPath),
+      publishMode: z.enum(['dry-run', 'replay', 'github']).default(DEFAULT_GITHUB.publishMode),
+      replayDirectory: z.string().min(1).default(DEFAULT_GITHUB.replayDirectory),
+      apiUrl: z.string().url().default(DEFAULT_GITHUB.apiUrl),
+    })
+    .optional(),
+  gitlab: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_GITLAB.enabled),
+      namespace: z.string().min(1).optional(),
+      project: z.string().min(1).optional(),
+      defaultBaseBranch: z.string().min(1).default(DEFAULT_GITLAB.defaultBaseBranch),
+      commentOnMergeRequest: z.boolean().default(DEFAULT_GITLAB.commentOnMergeRequest),
+      publishChecks: z.boolean().default(DEFAULT_GITLAB.publishChecks),
+      artifactPath: z.string().min(1).default(DEFAULT_GITLAB.artifactPath),
+      publishMode: z.enum(['dry-run', 'replay', 'gitlab']).default(DEFAULT_GITLAB.publishMode),
+      replayDirectory: z.string().min(1).default(DEFAULT_GITLAB.replayDirectory),
+      apiUrl: z.string().url().default(DEFAULT_GITLAB.apiUrl),
     })
     .optional(),
   automation: z

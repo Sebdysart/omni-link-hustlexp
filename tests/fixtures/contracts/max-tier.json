@@ -1,0 +1,82 @@
+{
+  "publishReview": {
+    "capabilityKeys": [
+      "maxAnnotationsPerCheck",
+      "maxCommentBytes",
+      "supportsChecks",
+      "supportsComments",
+      "supportsMetadata"
+    ],
+    "metadataKind": "null",
+    "topLevelKeys": [
+      "capabilities",
+      "checkRun",
+      "comment",
+      "metadata",
+      "mode",
+      "provider",
+      "summary",
+      "target"
+    ],
+    "targetKeys": ["headSha", "owner", "pullRequestNumber", "repo"],
+    "commentKeys": ["kind", "path", "status"],
+    "checkRunKeys": ["kind", "path", "status"]
+  },
+  "owners": {
+    "topLevelKeys": ["owners", "perRepo"],
+    "ownerKeys": ["kind", "matchedBy", "owner", "repoId", "scope"],
+    "perRepoKeys": ["backend", "client"]
+  },
+  "watch": {
+    "topLevelKeys": ["dirtyRepos", "repoCount", "running", "statePath", "updatedAt"]
+  },
+  "review": {
+    "topLevelKeys": [
+      "affectedRepos",
+      "baseRef",
+      "contractMismatches",
+      "executionPlan",
+      "generatedAt",
+      "headRef",
+      "impact",
+      "owners",
+      "policyDecisions",
+      "risk"
+    ],
+    "riskKeys": ["affectedRepos", "blockedByPolicy", "overallRisk", "reasons", "score"],
+    "executionPlanKeys": [
+      "approvals",
+      "baseBranch",
+      "blocked",
+      "branchName",
+      "changes",
+      "mode",
+      "planId",
+      "policyDecisions",
+      "pullRequest",
+      "risk",
+      "rollback"
+    ],
+    "changeKeys": [
+      "confidence",
+      "dependsOn",
+      "description",
+      "files",
+      "id",
+      "kind",
+      "preconditions",
+      "repo",
+      "risk",
+      "rollbackSteps",
+      "title",
+      "validationSteps"
+    ],
+    "rollbackKeys": ["branchName", "restoreTargets", "steps"]
+  },
+  "apply": {
+    "topLevelKeys": ["branches", "executed", "pullRequestCreated", "warnings"]
+  },
+  "rollback": {
+    "topLevelKeys": ["branches", "executed", "pullRequestCreated", "warnings"]
+  }
+}

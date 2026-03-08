@@ -27,6 +27,8 @@ omni-link scans up to 10 repositories, builds an ecosystem graph of API contract
 - **Ownership and policy engine** -- Resolves owners, evaluates branch/risk policies, and gates bounded execution
 - **Daemon-backed watch mode** -- Maintains warm ecosystem state for faster repeated analysis
 - **PR review artifacts** -- Generates branch-aware review output with risk, impact, owners, and execution planning
+- **Provider publish transport** -- Replays or publishes review comments and check runs through explicit provider transports
+- **Provider-aware publish orchestration** -- Provider-independent publish flow with capability negotiation, live PR/MR metadata ingestion, GitHub live support, and GitLab live scaffolding
 - **Bounded automation** -- Produces branch/PR-oriented execution plans with rollback instructions and dry-run defaults
 
 ## Installation
@@ -52,6 +54,7 @@ Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` fo
 
 ```json
 {
+  "reviewProvider": "github",
   "repos": [
     {
       "name": "my-backend",
@@ -90,6 +93,22 @@ Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` fo
     "preferDaemon": true,
     "statePath": "~/.claude/omni-link-daemon-state.sqlite"
   },
+  "github": {
+    "enabled": true,
+    "owner": "acme",
+    "repo": "platform",
+    "artifactPath": ".omni-link/review-artifact.json",
+    "publishMode": "replay",
+    "replayDirectory": ".omni-link/provider-replay"
+  },
+  "gitlab": {
+    "enabled": true,
+    "namespace": "acme",
+    "project": "platform",
+    "artifactPath": ".omni-link/review-artifact.gitlab.json",
+    "publishMode": "replay",
+    "replayDirectory": ".omni-link/provider-replay"
+  },
   "ownership": {
     "enabled": true,
     "defaultOwner": "platform-team",
@@ -118,29 +137,36 @@ Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` fo
 
 ### Config options
 
-| Section     | Key                        | Values                                                                                | Default                     | Description                                                  |
-| ----------- | -------------------------- | ------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
-| `repos[]`   | `name`                     | string                                                                                | --                          | Unique repo identifier                                       |
-| `repos[]`   | `path`                     | string                                                                                | --                          | Absolute path to repo root                                   |
-| `repos[]`   | `language`                 | `typescript`, `tsx`, `swift`, `python`, `go`, `rust`, `java`, `javascript`, `graphql` | --                          | Primary language                                             |
-| `repos[]`   | `role`                     | string                                                                                | --                          | Repo's role in the ecosystem (e.g., `backend`, `ios`, `web`) |
-| `evolution` | `aggressiveness`           | `aggressive`, `moderate`, `on-demand`                                                 | `aggressive`                | How proactively to surface suggestions                       |
-| `evolution` | `maxSuggestionsPerSession` | number                                                                                | `5`                         | Cap on evolution suggestions per session                     |
-| `evolution` | `categories`               | array of strings                                                                      | all 5                       | Which categories to include                                  |
-| `quality`   | `blockOnFailure`           | boolean                                                                               | `true`                      | Whether quality violations block output                      |
-| `quality`   | `requireTestsForNewCode`   | boolean                                                                               | `true`                      | Require test coverage for new code                           |
-| `quality`   | `conventionStrictness`     | `strict`, `moderate`, `relaxed`                                                       | `strict`                    | How strictly to enforce conventions                          |
-| `context`   | `tokenBudget`              | number                                                                                | `8000`                      | Max tokens for context digest                                |
-| `context`   | `prioritize`               | `changed-files-first`, `api-surface-first`                                            | `changed-files-first`       | What to prioritize in digest                                 |
-| `context`   | `includeRecentCommits`     | number                                                                                | `20`                        | How many recent commits to include                           |
-| `cache`     | `directory`                | string                                                                                | `~/.claude/omni-link-cache` | Cache directory path                                         |
-| `cache`     | `maxAgeDays`               | number                                                                                | `7`                         | Cache TTL in days                                            |
-| `daemon`    | `enabled` / `preferDaemon` | booleans                                                                              | `false`                     | Enable warm graph state and prefer daemon-backed reads       |
-| `daemon`    | `statePath`                | string                                                                                | cache-relative path         | Persistent SQLite daemon state file                          |
-| `ownership` | `defaultOwner` / `rules[]` | owner mappings by repo, path, API, or package                                         | disabled                    | Resolve ownership across repos and API surfaces              |
-| `runtime`   | artifact paths             | strings                                                                               | disabled                    | Ingest coverage, test, OpenAPI, GraphQL, telemetry artifacts |
-| `policies`  | branch/risk rules          | arrays + booleans + risk threshold                                                    | disabled                    | Gate execution and protected-branch behavior                 |
-| `maxTier`   | semantic / execution flags | booleans + thresholds                                                                 | disabled                    | Enable semantic accuracy and max-tier platform modules       |
+| Section     | Key                          | Values                                                                                | Default                     | Description                                                  |
+| ----------- | ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| root        | `reviewProvider`             | `github`, `gitlab`                                                                    | `github`                    | Selects the active review/publish provider                   |
+| `repos[]`   | `name`                       | string                                                                                | --                          | Unique repo identifier                                       |
+| `repos[]`   | `path`                       | string                                                                                | --                          | Absolute path to repo root                                   |
+| `repos[]`   | `language`                   | `typescript`, `tsx`, `swift`, `python`, `go`, `rust`, `java`, `javascript`, `graphql` | --                          | Primary language                                             |
+| `repos[]`   | `role`                       | string                                                                                | --                          | Repo's role in the ecosystem (e.g., `backend`, `ios`, `web`) |
+| `evolution` | `aggressiveness`             | `aggressive`, `moderate`, `on-demand`                                                 | `aggressive`                | How proactively to surface suggestions                       |
+| `evolution` | `maxSuggestionsPerSession`   | number                                                                                | `5`                         | Cap on evolution suggestions per session                     |
+| `evolution` | `categories`                 | array of strings                                                                      | all 5                       | Which categories to include                                  |
+| `quality`   | `blockOnFailure`             | boolean                                                                               | `true`                      | Whether quality violations block output                      |
+| `quality`   | `requireTestsForNewCode`     | boolean                                                                               | `true`                      | Require test coverage for new code                           |
+| `quality`   | `conventionStrictness`       | `strict`, `moderate`, `relaxed`                                                       | `strict`                    | How strictly to enforce conventions                          |
+| `context`   | `tokenBudget`                | number                                                                                | `8000`                      | Max tokens for context digest                                |
+| `context`   | `prioritize`                 | `changed-files-first`, `api-surface-first`                                            | `changed-files-first`       | What to prioritize in digest                                 |
+| `context`   | `includeRecentCommits`       | number                                                                                | `20`                        | How many recent commits to include                           |
+| `cache`     | `directory`                  | string                                                                                | `~/.claude/omni-link-cache` | Cache directory path                                         |
+| `cache`     | `maxAgeDays`                 | number                                                                                | `7`                         | Cache TTL in days                                            |
+| `daemon`    | `enabled` / `preferDaemon`   | booleans                                                                              | `false`                     | Enable warm graph state and prefer daemon-backed reads       |
+| `daemon`    | `statePath`                  | string                                                                                | cache-relative path         | Persistent SQLite daemon state file                          |
+| `github`    | `owner` / `repo`             | strings                                                                               | unset                       | Provider target used by `publish-review`                     |
+| `github`    | `publishMode`                | `dry-run`, `replay`, `github`                                                         | `dry-run`                   | Choose provider publish behavior                             |
+| `github`    | `replayDirectory` / `apiUrl` | strings                                                                               | provider defaults           | Replay output location or GitHub API endpoint                |
+| `gitlab`    | `namespace` / `project`      | strings                                                                               | unset                       | Provider target used when `reviewProvider=gitlab`            |
+| `gitlab`    | `publishMode`                | `dry-run`, `replay`, `gitlab`                                                         | `dry-run`                   | Choose provider publish behavior                             |
+| `gitlab`    | `replayDirectory` / `apiUrl` | strings                                                                               | provider defaults           | Replay output location or GitLab API endpoint                |
+| `ownership` | `defaultOwner` / `rules[]`   | owner mappings by repo, path, API, or package                                         | disabled                    | Resolve ownership across repos and API surfaces              |
+| `runtime`   | artifact paths               | strings                                                                               | disabled                    | Ingest coverage, test, OpenAPI, GraphQL, telemetry artifacts |
+| `policies`  | branch/risk rules            | arrays + booleans + risk threshold                                                    | disabled                    | Gate execution and protected-branch behavior                 |
+| `maxTier`   | semantic / execution flags   | booleans + thresholds                                                                 | disabled                    | Enable semantic accuracy and max-tier platform modules       |
 
 ## Skills
 
@@ -163,17 +189,18 @@ Skills are contextual instructions that guide Claude Code's behavior within the 
 
 Commands are slash commands available in Claude Code.
 
-| Command      | Description                                                         |
-| ------------ | ------------------------------------------------------------------- |
-| `/scan`      | Force a full ecosystem rescan across all configured repos           |
-| `/impact`    | Analyze cross-repo impact of uncommitted changes or branch diffs    |
-| `/health`    | Run a full ecosystem health audit with per-repo scores              |
-| `/evolve`    | Generate ranked evolution suggestions with evidence                 |
-| `/watch`     | Refresh or maintain daemon-backed ecosystem state                   |
-| `/owners`    | Resolve ownership assignments across repos and APIs                 |
-| `/review-pr` | Generate a PR review artifact with risk, owners, and execution plan |
-| `/apply`     | Apply the bounded execution plan on generated branches/PRs          |
-| `/rollback`  | Roll back the last generated execution plan                         |
+| Command           | Description                                                            |
+| ----------------- | ---------------------------------------------------------------------- |
+| `/scan`           | Force a full ecosystem rescan across all configured repos              |
+| `/impact`         | Analyze cross-repo impact of uncommitted changes or branch diffs       |
+| `/health`         | Run a full ecosystem health audit with per-repo scores                 |
+| `/evolve`         | Generate ranked evolution suggestions with evidence                    |
+| `/watch`          | Refresh or maintain daemon-backed ecosystem state                      |
+| `/owners`         | Resolve ownership assignments across repos and APIs                    |
+| `/review-pr`      | Generate a PR review artifact with risk, owners, and execution plan    |
+| `/publish-review` | Publish or replay provider comments/checks for a saved review artifact |
+| `/apply`          | Apply the bounded execution plan on generated branches/PRs             |
+| `/rollback`       | Roll back the last generated execution plan                            |
 
 ## Agents
 
@@ -277,6 +304,7 @@ npm run verify:max
 ```bash
 npm run smoke:cli
 npm run smoke:max
+npm run stress:full
 ```
 
 ### CLI
@@ -291,9 +319,13 @@ node dist/cli.js impact --config .omni-link.json
 node dist/cli.js watch --once --config .omni-link.json
 node dist/cli.js owners --config .omni-link.json
 node dist/cli.js review-pr --base main --head HEAD --config .omni-link.json
+node dist/cli.js publish-review --pr 42 --base main --head HEAD --config .omni-link.json
+node dist/cli.js publish-review --pr 42 --base main --head HEAD --config .omni-link.gitlab.json
 node dist/cli.js apply --base main --head HEAD --config .omni-link.json
 node dist/cli.js rollback --config .omni-link.json
 ```
+
+In live provider modes, `publish-review` fetches PR or MR metadata before publishing so omni-link can resolve missing head SHAs, detect closed or merged review targets, and trim provider payloads to provider-specific limits before comments or checks are emitted.
 
 ### Releases
 

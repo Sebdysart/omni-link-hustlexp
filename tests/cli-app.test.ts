@@ -74,6 +74,35 @@ function createDeps(overrides: Partial<CliDeps> = {}): CliDeps {
       },
       policyDecisions: [],
     })),
+    publishReview: vi.fn(async () => ({
+      provider: 'github',
+      mode: 'replay',
+      target: {
+        owner: 'acme',
+        repo: 'platform',
+        pullRequestNumber: 42,
+        headSha: 'abc123',
+      },
+      summary: '# omni-link review',
+      capabilities: {
+        supportsComments: true,
+        supportsChecks: true,
+        supportsMetadata: true,
+        maxAnnotationsPerCheck: 50,
+        maxCommentBytes: 65000,
+      },
+      metadata: null,
+      comment: {
+        kind: 'comment',
+        status: 'replayed',
+        path: '/tmp/comment.txt',
+      },
+      checkRun: {
+        kind: 'check-run',
+        status: 'replayed',
+        path: '/tmp/check-run.json',
+      },
+    })),
     rollback: vi.fn(async () => ({
       executed: false,
       branches: [],
@@ -124,6 +153,8 @@ describe('engine/cli-app parseArgs', () => {
       outputFormat: 'markdown',
       baseRef: undefined,
       headRef: undefined,
+      prNumber: undefined,
+      headSha: undefined,
       once: false,
       help: false,
     });
@@ -228,6 +259,73 @@ describe('engine/cli-app runCli', () => {
     ]);
   });
 
+  it('emits JSON for publish-review and passes through PR metadata', async () => {
+    const { io, stdout } = createIo();
+    const deps = createDeps();
+
+    const exitCode = await runCli(
+      [
+        'publish-review',
+        '--pr',
+        '42',
+        '--head-sha',
+        'abc123',
+        '--base',
+        'main',
+        '--head',
+        'feature/max-tier',
+        '--config',
+        '/tmp/config.json',
+      ],
+      io,
+      deps,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toEqual([
+      JSON.stringify(
+        {
+          provider: 'github',
+          mode: 'replay',
+          target: {
+            owner: 'acme',
+            repo: 'platform',
+            pullRequestNumber: 42,
+            headSha: 'abc123',
+          },
+          summary: '# omni-link review',
+          capabilities: {
+            supportsComments: true,
+            supportsChecks: true,
+            supportsMetadata: true,
+            maxAnnotationsPerCheck: 50,
+            maxCommentBytes: 65000,
+          },
+          metadata: null,
+          comment: {
+            kind: 'comment',
+            status: 'replayed',
+            path: '/tmp/comment.txt',
+          },
+          checkRun: {
+            kind: 'check-run',
+            status: 'replayed',
+            path: '/tmp/check-run.json',
+          },
+        },
+        null,
+        2,
+      ),
+    ]);
+    expect(deps.publishReview).toHaveBeenCalledWith(
+      expect.any(Object),
+      42,
+      'main',
+      'feature/max-tier',
+      'abc123',
+    );
+  });
+
   it('prints usage on parse errors', async () => {
     const { io, stdout, stderr } = createIo();
     const exitCode = await runCli(['scan', '--config'], io, createDeps());
@@ -235,6 +333,18 @@ describe('engine/cli-app runCli', () => {
     expect(exitCode).toBe(1);
     expect(stderr[0]).toBe('Missing value for --config');
     expect(stdout).toEqual([USAGE]);
+  });
+
+  it('fails publish-review when --pr is missing', async () => {
+    const { io, stderr } = createIo();
+    const exitCode = await runCli(
+      ['publish-review', '--config', '/tmp/config.json'],
+      io,
+      createDeps(),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr[0]).toBe('publish-review requires --pr <number>');
   });
 
   it('prints usage on unknown commands', async () => {

@@ -52,6 +52,12 @@ jobs:
       - name: Max-tier smoke
         run: npm run smoke:max
 
+      - name: Contract smoke
+        run: npm run smoke:contracts
+
+      - name: Package install smoke
+        run: npm run smoke:package
+
       - name: Pack dry run
         run: npm run pack:check
 

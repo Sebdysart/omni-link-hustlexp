@@ -1,0 +1,23 @@
+{
+  "name": "omni-link review",
+  "title": "omni-link review: high risk",
+  "summary": "# omni-link review\n- Risk: high (72)\n- Refs: main -> feature/max-tier\n- Affected repos: backend, client\n- Contract mismatches: 1\n- Impact paths: 1\n- Planned changes: 1\n- Required approvals: 1\n- Policy blocks: 1\n- Risk reasons: breaking contract mismatches detected; runtime-weighted signals increased priority",
+  "text": "# omni-link review\n- Risk: high (72)\n- Refs: main -> feature/max-tier\n- Affected repos: backend, client\n- Contract mismatches: 1\n- Impact paths: 1\n- Planned changes: 1\n- Required approvals: 1\n- Policy blocks: 1\n- Risk reasons: breaking contract mismatches detected; runtime-weighted signals increased priority\n\n## Contract Mismatches\n- client:src/client.ts:14 <- backend:src/routes/users.ts:5 (breaking) Consumer client expects field 'plan' on User which provider backend does not provide\n\n## Impact Paths\n- backend:src/routes/users.ts -> client:src/client.ts:14 (breaking) consumes GET /api/users\n\n## Planned Changes\n- client: Sync contract for backend [high]",
+  "conclusion": "action_required",
+  "annotations": [
+    {
+      "path": "src/client.ts",
+      "line": 14,
+      "level": "failure",
+      "title": "client impacted by backend",
+      "message": "consumes GET /api/users (trigger: src/routes/users.ts)"
+    },
+    {
+      "path": "src/client.ts",
+      "line": 14,
+      "level": "failure",
+      "title": "missing-field in client",
+      "message": "Consumer client expects field 'plan' on User which provider backend does not provide"
+    }
+  ]
+}

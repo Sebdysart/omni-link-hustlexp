@@ -1,0 +1,66 @@
+{
+  "scan": {
+    "topLevelKeys": [
+      "apiSurfaceSummary",
+      "architectureDiagram",
+      "configSha",
+      "contractStatus",
+      "conventionSummary",
+      "evolutionOpportunities",
+      "generatedAt",
+      "recentChangesSummary",
+      "repos",
+      "tokenCount"
+    ],
+    "repoKeys": ["branch", "commitsBehind", "language", "name", "uncommittedCount"],
+    "contractStatusKeys": ["compatible", "exact", "mismatches", "total"],
+    "evolutionSuggestionKeys": [
+      "affectedRepos",
+      "category",
+      "description",
+      "estimatedEffort",
+      "estimatedImpact",
+      "evidence",
+      "id",
+      "title"
+    ],
+    "conventionSummaryKeys": ["backend", "client"]
+  },
+  "scanMarkdown": {
+    "headings": [
+      "# OMNI-LINK ECOSYSTEM STATE",
+      "## Repos",
+      "## Architecture",
+      "## API Contracts",
+      "## Shared Types",
+      "## Recent Changes",
+      "## Evolution Opportunities",
+      "## Conventions",
+      "## API Route Signatures"
+    ]
+  },
+  "health": {
+    "topLevelKeys": ["overall", "perRepo"],
+    "perRepoKeys": ["deadCodeScore", "overall", "qualityScore", "testScore", "todoScore"]
+  },
+  "evolve": {
+    "topLevelKeys": [
+      "affectedRepos",
+      "category",
+      "description",
+      "estimatedEffort",
+      "estimatedImpact",
+      "evidence",
+      "id",
+      "queue",
+      "riskScore",
+      "runtimeWeight",
+      "title"
+    ]
+  },
+  "impact": {
+    "topLevelKeys": ["affected", "trigger"],
+    "affectedKeys": [],
+    "triggerKeys": ["change", "file", "repo"]
+  }
+}

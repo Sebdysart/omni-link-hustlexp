@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import type { DaemonStatus, OmniLinkConfig, RepoManifest } from '../types.js';
 import { CacheManager } from '../context/cache-manager.js';
@@ -12,8 +13,80 @@ import { scanRepo } from '../scanner/index.js';
 import type { FileCache } from '../scanner/index.js';
 import { GraphStateStore, type StoredScanState } from './store.js';
 
-function configSha(config: OmniLinkConfig): string {
+export function configSha(config: OmniLinkConfig): string {
   return crypto.createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0, 12);
+}
+
+function normalizeDirtyFiles(files: string[]): string {
+  return crypto
+    .createHash('sha1')
+    .update([...files].sort().join('\n'))
+    .digest('hex')
+    .slice(0, 12);
+}
+
+export function branchSignatureFromManifests(manifests: RepoManifest[]): string {
+  return manifests
+    .map((manifest) =>
+      [
+        manifest.repoId,
+        manifest.gitState.branch,
+        manifest.gitState.headSha,
+        normalizeDirtyFiles(manifest.gitState.uncommittedChanges),
+      ].join(':'),
+    )
+    .sort()
+    .join('|');
+}
+
+function normalizeStatusPath(entry: string): string {
+  return entry.replace(/\\/g, '/').trim();
+}
+
+export function currentBranchSignature(config: OmniLinkConfig): string {
+  return config.repos
+    .map((repo) => {
+      try {
+        const branch = execFileSync('git', ['-C', repo.path, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+        const headSha = execFileSync('git', ['-C', repo.path, 'rev-parse', 'HEAD'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+        const statusOutput = execFileSync(
+          'git',
+          ['-C', repo.path, 'status', '--porcelain', '--untracked-files=all'],
+          {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        ).trim();
+        const dirtyFiles = statusOutput
+          ? statusOutput
+              .split('\n')
+              .map((line) => normalizeStatusPath(line.slice(3)))
+              .filter(Boolean)
+          : [];
+
+        return [repo.name, branch, headSha, normalizeDirtyFiles(dirtyFiles)].join(':');
+      } catch {
+        return [repo.name, 'unknown', 'unknown', 'missing'].join(':');
+      }
+    })
+    .sort()
+    .join('|');
+}
+
+function normalizeState(state: StoredScanState): StoredScanState {
+  return {
+    ...state,
+    branchSignature:
+      state.branchSignature && state.branchSignature.length > 0
+        ? state.branchSignature
+        : branchSignatureFromManifests(state.manifests),
+  };
 }
 
 export function statePathFor(config: OmniLinkConfig): string {
@@ -50,6 +123,7 @@ async function scanAllRepos(config: OmniLinkConfig): Promise<StoredScanState> {
   return {
     updatedAt: new Date().toISOString(),
     configSha: configSha(config),
+    branchSignature: branchSignatureFromManifests(manifests),
     manifests,
     graph,
     context,
@@ -64,7 +138,7 @@ export async function saveDaemonState(
   const store = new GraphStateStore(statePathFor(config), {
     legacyFilePath: legacyStatePathFor(config),
   });
-  await store.save(state);
+  await store.save(normalizeState(state));
 }
 
 export async function loadDaemonState(config: OmniLinkConfig): Promise<StoredScanState | null> {
@@ -75,12 +149,23 @@ export async function loadDaemonState(config: OmniLinkConfig): Promise<StoredSca
   const store = new GraphStateStore(statePathFor(config), {
     legacyFilePath: legacyStatePathFor(config),
   });
+  const expectedConfigSha = configSha(config);
+  const branchSignature = currentBranchSignature(config);
+  const snapshot = await store.loadSnapshot(expectedConfigSha, branchSignature);
+  if (snapshot) {
+    return normalizeState(snapshot);
+  }
+
   const state = await store.load();
   if (!state) {
     return null;
   }
 
-  return state.configSha === configSha(config) ? state : null;
+  const normalizedState = normalizeState(state);
+  return normalizedState.configSha === expectedConfigSha &&
+    normalizedState.branchSignature === branchSignature
+    ? normalizedState
+    : null;
 }
 
 export async function updateDaemonState(config: OmniLinkConfig): Promise<StoredScanState> {
