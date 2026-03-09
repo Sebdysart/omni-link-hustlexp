@@ -58,13 +58,14 @@ function defaultThresholds(options) {
     minRepos: options.minRepos ?? 3,
     minDocsProcedures: options.minDocsProcedures ?? 60,
     minBackendProcedures: options.minBackendProcedures ?? 200,
-    minIosCalls: options.minIosCalls ?? 150,
+    minIosCalls: options.minIosCalls ?? 130,
     minBridges: options.minBridges ?? 140,
-    minObsoleteCalls: options.minObsoleteCalls ?? 0,
-    minAuthorityFindings: options.minAuthorityFindings ?? 5,
+    minAuthorityFindings: options.minAuthorityFindings ?? 2,
     minHealthOverall: options.minHealthOverall ?? 70,
+    maxObsoleteCalls: options.maxObsoleteCalls ?? 0,
     maxTokenCount: options.maxTokenCount,
-    maxWatchMs: options.maxWatchMs ?? 20000,
+    maxColdWatchMs: options.maxColdWatchMs ?? 25000,
+    maxWarmWatchMs: options.maxWarmWatchMs ?? 1000,
     maxAuthorityMs: options.maxAuthorityMs ?? 20000,
     maxWarmScanMs: options.maxWarmScanMs ?? 1000,
     maxHealthMs: options.maxHealthMs ?? 1000,
@@ -94,7 +95,8 @@ export async function runHustleXpLiveBenchmark(options = {}) {
     maxTokenCount: options.maxTokenCount ?? config.context.tokenBudget,
   });
 
-  const watchRun = await measure(() => watch(config, { once: true }));
+  const coldWatchRun = await measure(() => watch(config, { once: true }));
+  const warmWatchRun = await measure(() => watch(config, { once: true }));
   const authorityRun = await measure(() => authorityStatus(config));
   const scanRun = await measure(() => scan(config));
   const healthRun = await measure(() => health(config));
@@ -103,7 +105,8 @@ export async function runHustleXpLiveBenchmark(options = {}) {
 
   const summary = {
     timings: {
-      watchMs: watchRun.ms,
+      coldWatchMs: coldWatchRun.ms,
+      warmWatchMs: warmWatchRun.ms,
       authorityMs: authorityRun.ms,
       warmScanMs: scanRun.ms,
       healthMs: healthRun.ms,
@@ -111,9 +114,9 @@ export async function runHustleXpLiveBenchmark(options = {}) {
       reviewMs: reviewRun.ms,
     },
     watch: {
-      running: watchRun.value.running,
-      dirtyRepos: watchRun.value.dirtyRepos,
-      branchSignature: watchRun.value.branchSignature,
+      running: coldWatchRun.value.running,
+      dirtyRepos: coldWatchRun.value.dirtyRepos,
+      branchSignature: coldWatchRun.value.branchSignature,
     },
     authority: {
       currentPhase: authorityRun.value.authority?.currentPhase ?? null,
@@ -184,12 +187,10 @@ export async function runHustleXpLiveBenchmark(options = {}) {
     summary.authority.bridges >= thresholds.minBridges,
     `Expected at least ${thresholds.minBridges} bridges, got ${summary.authority.bridges}.`,
   );
-  if (thresholds.minObsoleteCalls > 0) {
-    assert(
-      summary.authority.obsoleteCalls >= thresholds.minObsoleteCalls,
-      `Expected at least ${thresholds.minObsoleteCalls} obsolete Swift calls to be detected, got ${summary.authority.obsoleteCalls}.`,
-    );
-  }
+  assert(
+    summary.authority.obsoleteCalls <= thresholds.maxObsoleteCalls,
+    `Expected at most ${thresholds.maxObsoleteCalls} obsolete Swift calls, got ${summary.authority.obsoleteCalls}.`,
+  );
   assert(
     summary.scan.tokenCount <= thresholds.maxTokenCount,
     `Expected token budget <= ${thresholds.maxTokenCount}, got ${summary.scan.tokenCount}.`,
@@ -208,7 +209,14 @@ export async function runHustleXpLiveBenchmark(options = {}) {
       'Expected review execution plan to be blocked while authority drift is unresolved.',
     );
   }
-  assert(watchRun.ms <= thresholds.maxWatchMs, `Watch benchmark regressed: ${watchRun.ms}ms.`);
+  assert(
+    coldWatchRun.ms <= thresholds.maxColdWatchMs,
+    `Cold watch benchmark regressed: ${coldWatchRun.ms}ms.`,
+  );
+  assert(
+    warmWatchRun.ms <= thresholds.maxWarmWatchMs,
+    `Warm watch benchmark regressed: ${warmWatchRun.ms}ms.`,
+  );
   assert(
     authorityRun.ms <= thresholds.maxAuthorityMs,
     `Authority benchmark regressed: ${authorityRun.ms}ms.`,

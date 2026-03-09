@@ -7,6 +7,10 @@ final class TRPCClient {
     private struct TaskResponse: Codable {
         let id: String
         let state: String
+
+        var isOpen: Bool {
+            state == "OPEN"
+        }
     }
 
     private struct SendMessageInput: Codable {

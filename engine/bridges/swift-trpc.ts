@@ -106,6 +106,10 @@ function compareFields(
   for (const [fieldName, authorityField] of authorityFields) {
     const actualField = actualFields.get(fieldName);
     if (!actualField) {
+      if (authorityField.optional) {
+        continue;
+      }
+
       mismatches.push(
         bridgeMismatch(
           'missing-field',
@@ -128,7 +132,10 @@ function compareFields(
       continue;
     }
 
-    if (authorityField.type !== actualField.type) {
+    const normalizedAuthorityType = normalizeComparableType(authorityField.type, fieldName);
+    const normalizedActualType = normalizeComparableType(actualField.type, fieldName);
+
+    if (normalizedAuthorityType !== normalizedActualType) {
       mismatches.push(
         bridgeMismatch(
           'type-mismatch',
@@ -176,6 +183,89 @@ function compareFields(
   }
 
   return mismatches;
+}
+
+function normalizeComparableType(rawType: string | undefined, fieldName: string): string {
+  if (!rawType) {
+    return 'unknown';
+  }
+
+  const trimmed = rawType.replace(/\s+/g, ' ').trim();
+  const withoutNullish = trimmed
+    .split('|')
+    .map((part) => part.trim())
+    .filter((part) => part !== 'null' && part !== 'undefined')
+    .join(' | ');
+  const optionalNormalized = withoutNullish.replace(/[?!]$/, '').trim();
+
+  const swiftArrayMatch = optionalNormalized.match(/^\[([A-Za-z0-9_<>.? ]+)\]$/);
+  if (swiftArrayMatch) {
+    return `${normalizeComparableType(swiftArrayMatch[1], fieldName)}[]`;
+  }
+
+  const genericArrayMatch = optionalNormalized.match(/^Array<(.+)>$/);
+  if (genericArrayMatch) {
+    return `${normalizeComparableType(genericArrayMatch[1], fieldName)}[]`;
+  }
+
+  const compact = optionalNormalized.replace(/\s+/g, '');
+  if (compact.endsWith('[]')) {
+    return `${normalizeComparableType(compact.slice(0, -2), fieldName)}[]`;
+  }
+
+  if (/^'(?:[^']+)'(?:\|'(?:[^']+)')+$/.test(compact)) {
+    return 'string-enum';
+  }
+
+  if (
+    compact === 'string' ||
+    compact === 'String' ||
+    compact === 'UUID' ||
+    compact === 'URL' ||
+    compact === 'StringProtocol'
+  ) {
+    return 'string';
+  }
+
+  if (
+    compact === 'number' ||
+    compact === 'Int' ||
+    compact === 'Int8' ||
+    compact === 'Int16' ||
+    compact === 'Int32' ||
+    compact === 'Int64' ||
+    compact === 'UInt' ||
+    compact === 'UInt8' ||
+    compact === 'UInt16' ||
+    compact === 'UInt32' ||
+    compact === 'UInt64' ||
+    compact === 'Double' ||
+    compact === 'Float' ||
+    compact === 'CGFloat' ||
+    compact === 'NSNumber'
+  ) {
+    return 'number';
+  }
+
+  if (compact === 'boolean' || compact === 'Bool') {
+    return 'boolean';
+  }
+
+  if (compact === 'Date') {
+    return 'string';
+  }
+
+  if (/^[A-Z][A-Za-z0-9_]*$/.test(compact)) {
+    if (/(State|Status|Tier|Mode|Role|Decision|Kind|Level)$/.test(compact)) {
+      return 'string-enum';
+    }
+
+    if (fieldName.endsWith('At') || fieldName.endsWith('Date') || fieldName.endsWith('Until')) {
+      return 'string';
+    }
+  }
+
+  return compact;
 }
 
 function simplifyTypeExpression(expression: string | undefined): string | undefined {
@@ -256,6 +346,10 @@ function extractSwiftTypeDefinitions(
       .map((line) => line.trim())
       .map((line) => line.replace(/\/\/.*$/, '').trim())
       .flatMap((line) => {
+        if (line === '' || /{\s*$/.test(line)) {
+          return [];
+        }
+
         const fieldMatch =
           /^(?:@[\w().]+(?:\s+)?)*(?:private\s+|fileprivate\s+|internal\s+|public\s+)?(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=]+?)(?:\s*=.*)?$/.exec(
             line,

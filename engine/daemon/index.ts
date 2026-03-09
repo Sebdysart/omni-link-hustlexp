@@ -55,20 +55,33 @@ export function currentBranchSignature(config: OmniLinkConfig): string {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
         }).trim();
-        const statusOutput = execFileSync(
+        const diffOutput = execFileSync('git', ['-C', repo.path, 'diff', '--name-only'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        const stagedOutput = execFileSync(
           'git',
-          ['-C', repo.path, 'status', '--porcelain', '--untracked-files=all'],
+          ['-C', repo.path, 'diff', '--cached', '--name-only'],
           {
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'pipe'],
           },
-        ).trim();
-        const dirtyFiles = statusOutput
-          ? statusOutput
-              .split('\n')
-              .map((line) => normalizeStatusPath(line.slice(3)))
-              .filter(Boolean)
-          : [];
+        );
+        const untrackedOutput = execFileSync(
+          'git',
+          ['-C', repo.path, 'ls-files', '--others', '--exclude-standard'],
+          {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        );
+        const dirtyFiles = [
+          ...diffOutput.split('\n'),
+          ...stagedOutput.split('\n'),
+          ...untrackedOutput.split('\n'),
+        ]
+          .map((line) => normalizeStatusPath(line.trim()))
+          .filter(Boolean);
 
         return [repo.name, branch, headSha, normalizeDirtyFiles(dirtyFiles)].join(':');
       } catch {
@@ -181,6 +194,22 @@ export async function watchEcosystem(
   const store = new GraphStateStore(statePathFor(config), {
     legacyFilePath: legacyStatePathFor(config),
   });
+
+  if (once) {
+    const cachedState = await loadDaemonState(config);
+    if (cachedState) {
+      const cachedStatus: DaemonStatus = {
+        running: true,
+        updatedAt: cachedState.updatedAt,
+        repoCount: cachedState.manifests.length,
+        dirtyRepos: cachedState.dirtyRepos,
+        statePath: statePathFor(config),
+      };
+      options.onStatus?.(cachedStatus);
+      return cachedStatus;
+    }
+  }
+
   await updateDaemonState(config);
   const initialStatus = await store.status();
   options.onStatus?.(initialStatus);

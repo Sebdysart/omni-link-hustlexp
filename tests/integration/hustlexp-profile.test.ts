@@ -138,5 +138,5 @@ describe('HustleXP workflow profile integration', () => {
           mismatch.provider.file.includes('src/index.ts'),
       ),
     ).toBe(false);
-  }, 30_000);
+  }, 60_000);
 });

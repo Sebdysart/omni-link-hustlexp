@@ -24,6 +24,7 @@ Create a new task.
 {
   title: string;
   price: number;
+  category?: string;
 }
 ```
 

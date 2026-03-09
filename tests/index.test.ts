@@ -46,7 +46,6 @@ import {
   health,
   evolve,
   qualityCheck,
-  SimulateOnlyError,
 } from '../engine/index.js';
 import { scanRepo } from '../engine/scanner/index.js';
 import { buildEcosystemGraph } from '../engine/grapher/index.js';
@@ -437,36 +436,108 @@ describe('engine/index — qualityCheck()', () => {
   });
 });
 
-describe('engine/index — simulateOnly guard', () => {
+describe('engine/index — simulateOnly read-only behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   const simulateConfig = (): OmniLinkConfig => ({ ...makeConfig(1), simulateOnly: true });
 
-  it('scan() throws SimulateOnlyError when simulateOnly is true', async () => {
-    await expect(scan(simulateConfig())).rejects.toThrow(SimulateOnlyError);
+  it('scan() still works when simulateOnly is true', async () => {
+    const m0 = makeManifest('repo-0');
+    const graph = makeGraph([m0]);
+    vi.mocked(scanRepo).mockResolvedValue(m0);
+    vi.mocked(buildEcosystemGraph).mockReturnValue(graph);
+    vi.mocked(buildContext).mockReturnValue({
+      digest: {
+        generatedAt: '',
+        configSha: '',
+        repos: [],
+        contractStatus: { total: 0, exact: 0, compatible: 0, mismatches: [] },
+        evolutionOpportunities: [],
+        conventionSummary: {},
+        apiSurfaceSummary: '',
+        recentChangesSummary: '',
+        tokenCount: 0,
+      },
+      markdown: '# Digest',
+    });
+
+    await expect(scan(simulateConfig())).resolves.toBeTruthy();
   });
 
-  it('impact() throws SimulateOnlyError when simulateOnly is true', async () => {
-    await expect(impact(simulateConfig(), [])).rejects.toThrow(SimulateOnlyError);
+  it('impact() still works when simulateOnly is true', async () => {
+    const m0 = makeManifest('repo-0');
+    const graph = makeGraph([m0]);
+    vi.mocked(scanRepo).mockResolvedValue(m0);
+    vi.mocked(buildEcosystemGraph).mockReturnValue(graph);
+    vi.mocked(analyzeImpact).mockReturnValue([]);
+
+    await expect(impact(simulateConfig(), [])).resolves.toEqual([]);
   });
 
-  it('impactFromUncommitted() throws SimulateOnlyError when simulateOnly is true', async () => {
-    await expect(impactFromUncommitted(simulateConfig())).rejects.toThrow(SimulateOnlyError);
+  it('impactFromUncommitted() still works when simulateOnly is true', async () => {
+    const m0 = makeManifest('repo-0');
+    const graph = makeGraph([m0]);
+    vi.mocked(scanRepo).mockResolvedValue(m0);
+    vi.mocked(buildEcosystemGraph).mockReturnValue(graph);
+    vi.mocked(analyzeImpact).mockReturnValue([]);
+
+    await expect(impactFromUncommitted(simulateConfig())).resolves.toEqual([]);
   });
 
-  it('health() throws SimulateOnlyError when simulateOnly is true', async () => {
-    await expect(health(simulateConfig())).rejects.toThrow(SimulateOnlyError);
+  it('health() still works when simulateOnly is true', async () => {
+    const m0 = makeManifest('repo-0');
+    const graph = makeGraph([m0]);
+    const healthResult = {
+      perRepo: { 'repo-0': { overall: 88 } },
+      overall: 88,
+    };
+    vi.mocked(scanRepo).mockResolvedValue(m0);
+    vi.mocked(buildEcosystemGraph).mockReturnValue(graph);
+    vi.mocked(scoreEcosystemHealth).mockReturnValue(healthResult as never);
+
+    await expect(health(simulateConfig())).resolves.toEqual(healthResult);
   });
 
-  it('evolve() throws SimulateOnlyError when simulateOnly is true', async () => {
-    await expect(evolve(simulateConfig())).rejects.toThrow(SimulateOnlyError);
+  it('evolve() still works when simulateOnly is true', async () => {
+    const m0 = makeManifest('repo-0');
+    const graph = makeGraph([m0]);
+    const suggestions = [
+      {
+        id: 'sug-1',
+        category: 'feature' as const,
+        title: 'Use caching',
+        description: 'Improve repeated fetches',
+        evidence: [],
+        estimatedEffort: 'small' as const,
+        estimatedImpact: 'medium' as const,
+        affectedRepos: ['repo-0'],
+      },
+    ];
+    vi.mocked(scanRepo).mockResolvedValue(m0);
+    vi.mocked(buildEcosystemGraph).mockReturnValue(graph);
+    vi.mocked(analyzeEvolution).mockReturnValue(suggestions);
+
+    await expect(evolve(simulateConfig())).resolves.toEqual([
+      expect.objectContaining({ title: 'Use caching' }),
+    ]);
   });
 
-  it('qualityCheck() throws SimulateOnlyError when simulateOnly is true', async () => {
-    await expect(qualityCheck('const x = 1;', 'src/index.ts', simulateConfig())).rejects.toThrow(
-      SimulateOnlyError,
+  it('qualityCheck() still works when simulateOnly is true', async () => {
+    const m0 = makeManifest('repo-0');
+    vi.mocked(scanRepo).mockResolvedValue(m0);
+    vi.mocked(checkReferences).mockReturnValue({ valid: true, violations: [] });
+    vi.mocked(validateConventions).mockReturnValue({ valid: true, violations: [] });
+    vi.mocked(detectSlop).mockReturnValue({ clean: true, issues: [] });
+
+    await expect(qualityCheck('const x = 1;', 'src/index.ts', simulateConfig())).resolves.toEqual(
+      expect.objectContaining({
+        references: expect.objectContaining({ valid: true }),
+        conventions: expect.objectContaining({ valid: true }),
+        slop: expect.objectContaining({ clean: true }),
+        rules: expect.objectContaining({ passed: true }),
+      }),
     );
   });
 });

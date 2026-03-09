@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
 [![Verification](https://img.shields.io/badge/verify:stress-passing-brightgreen.svg)](#verification)
-[![Tests](https://img.shields.io/badge/tests-497%2B4_skipped-brightgreen.svg)](#verification)
+[![Tests](https://img.shields.io/badge/tests-499%2B4_skipped-brightgreen.svg)](#verification)
 
 ## What it does
 
@@ -74,6 +74,95 @@ The result is a review surface that answers the questions the generic scanner co
 - Do the docs still claim bootstrap while the product is clearly beyond bootstrap?
 - Is a proposed change blocked because the authority layer has not been reconciled yet?
 
+## Claude Operating Playbook
+
+If Claude Code is using this fork correctly, it should behave in this order:
+
+1. Start the daemon-backed view of the workspace.
+2. Read authority state before attempting code mutation.
+3. Treat docs drift, backend drift, and consumer drift as separate queues.
+4. Keep `simulateOnly` enabled until the affected slice is reconciled.
+5. Use `review-pr` before `apply`, not after.
+
+Recommended command order:
+
+```bash
+omni-link-hustlexp watch --once
+omni-link-hustlexp authority-status
+omni-link-hustlexp scan --markdown
+omni-link-hustlexp impact
+omni-link-hustlexp health
+omni-link-hustlexp review-pr
+omni-link-hustlexp publish-review
+```
+
+Only after authority drift is reduced for the touched area should Claude consider:
+
+```bash
+omni-link-hustlexp apply --plan .omni-link/execution-plan.json
+```
+
+### How Claude should interpret the outputs
+
+- `docsOnly`: procedures still declared in docs authority but not found in the live backend. Claude should either remove them from docs or prove the backend implementation exists elsewhere before editing code.
+- `backendOnly`: procedures live in `backend/src/routers` but still undocumented. Claude should document these before claiming the contract is reconciled.
+- `obsoleteCalls`: Swift consumer calls that target procedures no longer present in the authoritative backend. Claude should remove or remap these before enabling execution.
+- `payloadDrift`: endpoint exists, but request/response shape drift remains between docs authority, backend, and Swift models. Claude should normalize schemas before merging adjacent feature work.
+- `authority_drift`: top-level finding that means docs intent and implementation reality still diverge. In reconciliation mode this blocks `apply`; in strict mode it should also block review approval.
+
+### What `simulateOnly` means here
+
+`simulateOnly` is the correct default for HustleXP reconciliation. It does **not** disable `watch`, `scan`, `impact`, `health`, `evolve`, or `review-pr`. It disables mutation. Claude should keep it enabled until:
+
+- the touched authority slice is reconciled
+- the relevant obsolete calls are removed or remapped
+- the policy surface for the change is green
+
+### What success looks like
+
+For the live HustleXP workflow, Claude should treat this as the success condition:
+
+- docs authority matches the backend/provider surface for the slice being changed
+- Swift consumer calls match the backend/provider surface for the slice being changed
+- payload drift is either zero or explicitly understood and documented
+- `review-pr` reports low or medium risk without unresolved `authority_drift`
+- `apply` remains branch-oriented and never mutates `main` directly
+
+## Reconciliation Loop
+
+This fork is designed around a specific three-way loop:
+
+1. `HUSTLEXP-DOCS` defines intended product and contract authority.
+2. `hustlexp-ai-backend` defines implemented provider truth.
+3. `HUSTLEXPFINAL1` defines actual consumer truth.
+4. `omni-link-hustlexp` measures the gap between all three and blocks unsafe automation until the gap is worked down.
+
+The correct operator behavior is not “generate code first.” It is:
+
+1. Check authority.
+2. Fix drift.
+3. Review impact.
+4. Publish evidence.
+5. Apply only when the slice is reconciled.
+
+## Live Benchmark Targets
+
+The live benchmark is meant to be a real operating bar, not a vanity metric. The current targets are:
+
+- cold daemon refresh under `20s`
+- warm daemon reuse under `1s`
+- warm `scan` under `1s`
+- warm `health` under `1s`
+- warm `impact` under `2s`
+- warm `review-pr` under `1s`
+- obsolete Swift procedure calls at `0`
+- at least `60` authority procedures parsed from docs
+- at least `200` backend procedures detected from `backend/src/routers`
+- at least `130` Swift tRPC calls detected from the reconciled iOS repo
+- at least `140` direct Swift↔backend bridge matches
+
+If the benchmark passes but `authority-status` is still red, the fork is healthy and the workspace is not. Claude should respond by reconciling the live repos, not by weakening the benchmark.
+
 ## Verification
 
 The current repository state is validated by `npm run verify:stress`, which includes lint, typecheck, unit/integration tests, coverage, build, CLI smoke, max-tier smoke, contract fixtures, package-install smoke, full stress, and live-provider gates when credentials are configured.
@@ -106,8 +195,8 @@ The live benchmark is intentionally stricter than the fixture suite on coverage,
 
 Current proof points from the verified state:
 
-- `497` tests passing, `4` live-provider tests skipped unless credentials are configured
-- `90.7%` statement coverage
+- `499` tests passing, `4` live-provider tests skipped unless credentials are configured
+- `90.4%` statement coverage
 - `0` moderate-or-higher audit vulnerabilities
 - Live GitHub and GitLab metadata fetch plus publish validated through sandbox review targets
 - Cleanup verified: sandbox PRs/MRs are closed and temporary branches are deleted

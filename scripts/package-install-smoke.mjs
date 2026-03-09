@@ -63,7 +63,9 @@ export async function runPackageInstallSmoke(options = {}) {
       ),
     );
 
-    run('npm', ['install', tarballPath], installRoot);
+    // Ignore transitive install scripts so the package smoke verifies the packed
+    // CLI/runtime surface instead of depending on third-party binary CDN health.
+    run('npm', ['install', '--ignore-scripts', tarballPath], installRoot);
 
     const installedPackageRoot = path.join(installRoot, 'node_modules', packageName);
     const installedCliPath = path.join(installedPackageRoot, 'dist', 'cli.js');

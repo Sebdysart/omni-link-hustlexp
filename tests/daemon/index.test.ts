@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { loadDaemonState, updateDaemonState } from '../../engine/daemon/index.js';
+import { loadDaemonState, updateDaemonState, watchEcosystem } from '../../engine/daemon/index.js';
 import type { OmniLinkConfig } from '../../engine/types.js';
 
 function makeConfig(repoPath: string, cacheDir: string): OmniLinkConfig {
@@ -89,5 +89,21 @@ describe('daemon/index', () => {
     const restoredMain = await loadDaemonState(config);
     expect(restoredMain?.branchSignature).toBe(mainState.branchSignature);
     expect(restoredMain?.context.markdown).toBe(mainState.context.markdown);
-  });
+  }, 15_000);
+
+  it('watch once reuses a matching cached snapshot without rescanning', async () => {
+    const existingState = await updateDaemonState(config);
+
+    fs.writeFileSync(path.join(repoDir, 'src', 'index.ts'), 'export const value = 999;\n', 'utf8');
+    execSync('git checkout -- src/index.ts', { cwd: repoDir, stdio: 'ignore' });
+
+    const status = await watchEcosystem(config, { once: true });
+
+    expect(status.running).toBe(true);
+    expect(status.updatedAt).toBe(existingState.updatedAt);
+
+    const loaded = await loadDaemonState(config);
+    expect(loaded?.updatedAt).toBe(existingState.updatedAt);
+    expect(loaded?.context.markdown).toBe(existingState.context.markdown);
+  }, 15_000);
 });

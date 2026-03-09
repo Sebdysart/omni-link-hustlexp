@@ -193,6 +193,34 @@ describe('swift tRPC bridge', () => {
           mismatch.description.includes('delivered'),
       ),
     ).toBe(true);
+    expect(
+      analysis.mismatches.some(
+        (mismatch) =>
+          mismatch.kind === 'type-mismatch' && mismatch.description.includes('task.create.title'),
+      ),
+    ).toBe(false);
+    expect(
+      analysis.mismatches.some(
+        (mismatch) =>
+          mismatch.kind === 'type-mismatch' && mismatch.description.includes('task.create.price'),
+      ),
+    ).toBe(false);
+    expect(
+      analysis.mismatches.some(
+        (mismatch) =>
+          mismatch.kind === 'missing-field' &&
+          mismatch.description.includes('task.create') &&
+          mismatch.description.includes('category'),
+      ),
+    ).toBe(false);
+    expect(
+      analysis.mismatches.some(
+        (mismatch) =>
+          mismatch.kind === 'extra-field' &&
+          mismatch.description.includes('task.create') &&
+          mismatch.description.includes('isOpen'),
+      ),
+    ).toBe(false);
     expect(analysis.findings.map((finding) => finding.kind)).toEqual(
       expect.arrayContaining(['bridge_obsolete_call', 'bridge_mismatch']),
     );

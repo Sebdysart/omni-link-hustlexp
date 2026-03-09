@@ -43,7 +43,6 @@ import { validateConventions } from './quality/convention-validator.js';
 import { scoreEcosystemHealth } from './quality/health-scorer.js';
 import { checkReferences } from './quality/reference-checker.js';
 import { checkRules } from './quality/rule-engine.js';
-import { assertNotSimulateOnly } from './quality/simulate-guard.js';
 import {
   createReviewArtifact,
   gitChangedFilesBetween,
@@ -242,7 +241,6 @@ async function loadScanResult(
 }
 
 export async function scan(config: OmniLinkConfig): Promise<ScanResult> {
-  assertNotSimulateOnly(config, 'scan');
   return loadScanResult(config);
 }
 
@@ -250,13 +248,11 @@ export async function impact(
   config: OmniLinkConfig,
   changedFiles: Array<{ repo: string; file: string; change: string }>,
 ): Promise<ImpactPath[]> {
-  assertNotSimulateOnly(config, 'impact');
   const result = await loadScanResult(config);
   return analyzeImpact(result.graph, changedFiles);
 }
 
 export async function impactFromUncommitted(config: OmniLinkConfig): Promise<ImpactPath[]> {
-  assertNotSimulateOnly(config, 'impact');
   const result = await loadScanResult(config, { bypassSessionCache: true });
   const changedFiles = result.manifests.flatMap((manifest) =>
     manifest.gitState.uncommittedChanges.map((file) => ({
@@ -273,20 +269,17 @@ export async function impactFromRefs(
   baseRef: string,
   headRef: string,
 ): Promise<ImpactPath[]> {
-  assertNotSimulateOnly(config, 'impact');
   const result = await loadScanResult(config);
   const changedFiles = gitChangedFilesBetween(config, baseRef, headRef);
   return analyzeImpact(result.graph, changedFiles);
 }
 
 export async function health(config: OmniLinkConfig): Promise<HealthResult> {
-  assertNotSimulateOnly(config, 'health');
   const result = await loadScanResult(config);
   return scoreEcosystemHealth(result.graph);
 }
 
 export async function evolve(config: OmniLinkConfig): Promise<EvolutionSuggestion[]> {
-  assertNotSimulateOnly(config, 'evolve');
   const result = await loadScanResult(config);
   return rankEvolutionSuggestions(analyzeEvolution(result.graph, config), result.graph);
 }
@@ -470,7 +463,6 @@ export async function qualityCheck(
   file: string,
   config: OmniLinkConfig,
 ): Promise<QualityCheckResult> {
-  assertNotSimulateOnly(config, 'qualityCheck');
   const manifests = await scanConfiguredRepos(config);
   const manifest = manifests.find((entry) => file.startsWith(entry.path)) ?? manifests[0];
 

@@ -20,8 +20,8 @@ export class SimulateOnlyError extends Error {
 }
 
 /**
- * Assert that the config is NOT in simulate-only mode before executing a real operation.
- * Call at the top of any function that has side effects or performs actual scanning.
+ * Assert that the config is NOT in simulate-only mode before executing a mutating operation.
+ * Read-only analysis commands should remain available in simulate-only mode.
  *
  * @throws {SimulateOnlyError} if config.simulateOnly is true
  */
