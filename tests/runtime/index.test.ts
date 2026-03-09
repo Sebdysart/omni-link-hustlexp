@@ -232,6 +232,34 @@ type Mutation {
     expect(graphRiskLevel(enriched)).toBe('high');
   });
 
+  it('discovers common HustleXP runtime artifact paths when not explicitly configured', () => {
+    const repoPath = makeTmpDir();
+    fs.mkdirSync(path.join(repoPath, 'artifacts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoPath, 'artifacts', 'test-results.json'),
+      JSON.stringify({ passed: 9, failed: 1 }),
+    );
+    fs.writeFileSync(
+      path.join(repoPath, 'artifacts', 'telemetry-summary.json'),
+      JSON.stringify({ requests: 1200, errors: 12, p95Ms: 220 }),
+    );
+
+    const manifest = makeManifest(repoPath);
+    const config = makeConfig(repoPath);
+    config.runtime = {
+      enabled: true,
+    };
+
+    const signals = collectRuntimeSignals(manifest, config);
+
+    expect(signals.find((signal) => signal.kind === 'tests')?.source).toContain(
+      path.join('artifacts', 'test-results.json'),
+    );
+    expect(signals.find((signal) => signal.kind === 'telemetry')?.source).toContain(
+      path.join('artifacts', 'telemetry-summary.json'),
+    );
+  });
+
   it('re-ranks evolution suggestions using runtime weight', () => {
     const repoPath = makeTmpDir();
     fs.mkdirSync(path.join(repoPath, 'reports'), { recursive: true });

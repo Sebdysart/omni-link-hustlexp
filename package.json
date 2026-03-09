@@ -29,6 +29,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "benchmark:hustlexp:live": "node scripts/hustlexp-live-benchmark.mjs",
     "benchmark:smoke": "node scripts/benchmark-smoke.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -49,7 +50,7 @@
     "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
     "verify:max": "npm run verify && npm run smoke:max && npm run smoke:contracts && npm run smoke:package",
     "verify:stress": "npm run verify:max && npm run stress:full && npm run test:providers:live:if-configured",
-    "verify:hustlexp": "npm run verify:max && npm test -- tests/authority/index.test.ts tests/bridges/swift-trpc.test.ts tests/integration/hustlexp-profile.test.ts"
+    "verify:hustlexp": "npm run verify:max && npm test -- tests/authority/index.test.ts tests/bridges/swift-trpc.test.ts tests/integration/hustlexp-profile.test.ts tests/runtime/index.test.ts tests/cli-app.test.ts tests/scripts/hustlexp-live-benchmark.test.ts"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -2,13 +2,13 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import pLimit from 'p-limit';
 
 import type { DaemonStatus, OmniLinkConfig, RepoManifest } from '../types.js';
 import { CacheManager } from '../context/cache-manager.js';
 import { buildContext } from '../context/index.js';
 import { buildEcosystemGraph } from '../grapher/index.js';
-import { attachOwnersToGraph } from '../ownership/index.js';
-import { attachRuntimeSignals } from '../runtime/index.js';
+import { enrichGraphForConfig } from '../graph/enrichment.js';
 import { scanRepo } from '../scanner/index.js';
 import type { FileCache } from '../scanner/index.js';
 import { GraphStateStore, type StoredScanState } from './store.js';
@@ -109,16 +109,12 @@ async function scanAllRepos(config: OmniLinkConfig): Promise<StoredScanState> {
   const manifestCache = config.cache?.directory
     ? new CacheManager(config.cache.directory)
     : undefined;
-  const manifests: RepoManifest[] = [];
-
-  for (const repo of config.repos) {
-    manifests.push(await scanRepo(repo, fileCache, manifestCache, { config }));
-  }
-
-  const graph = attachRuntimeSignals(
-    attachOwnersToGraph(buildEcosystemGraph(manifests), config),
-    config,
+  const limit = pLimit(4);
+  const manifests: RepoManifest[] = await Promise.all(
+    config.repos.map((repo) => limit(() => scanRepo(repo, fileCache, manifestCache, { config }))),
   );
+
+  const graph = enrichGraphForConfig(buildEcosystemGraph(manifests), config);
   const context = buildContext(graph, config);
   return {
     updatedAt: new Date().toISOString(),

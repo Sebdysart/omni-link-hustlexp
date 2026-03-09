@@ -10,6 +10,48 @@ import type {
   RuntimeSignal,
 } from '../types.js';
 
+const DISCOVERABLE_RUNTIME_ARTIFACTS: Record<
+  | 'coverageSummaryPath'
+  | 'testResultsPath'
+  | 'openApiPath'
+  | 'graphQlSchemaPath'
+  | 'telemetrySummaryPath'
+  | 'traceSummaryPath',
+  string[]
+> = {
+  coverageSummaryPath: [
+    path.join('coverage', 'coverage-summary.json'),
+    path.join('backend', 'coverage', 'coverage-summary.json'),
+  ],
+  testResultsPath: [
+    path.join('artifacts', 'test-results.json'),
+    path.join('reports', 'test-results.json'),
+    path.join('backend', 'artifacts', 'test-results.json'),
+    path.join('backend', 'reports', 'test-results.json'),
+    path.join('artifacts', 'ios-test-summary.json'),
+  ],
+  openApiPath: [
+    path.join('contracts', 'openapi.json'),
+    path.join('backend', 'contracts', 'openapi.json'),
+    path.join('openapi.json'),
+  ],
+  graphQlSchemaPath: [
+    path.join('contracts', 'schema.graphql'),
+    path.join('backend', 'contracts', 'schema.graphql'),
+    path.join('schema.graphql'),
+  ],
+  telemetrySummaryPath: [
+    path.join('artifacts', 'telemetry-summary.json'),
+    path.join('reports', 'telemetry.json'),
+    path.join('backend', 'artifacts', 'telemetry-summary.json'),
+  ],
+  traceSummaryPath: [
+    path.join('artifacts', 'trace-summary.json'),
+    path.join('reports', 'traces.json'),
+    path.join('backend', 'artifacts', 'trace-summary.json'),
+  ],
+};
+
 function readJsonIfPresent(filePath: string): Record<string, unknown> | null {
   if (!fs.existsSync(filePath)) return null;
 
@@ -28,6 +70,39 @@ function readTextIfPresent(filePath: string): string | null {
   } catch {
     return null;
   }
+}
+
+function resolveRuntimeArtifactPath(
+  manifest: RepoManifest,
+  config: OmniLinkConfig,
+  key:
+    | 'coverageSummaryPath'
+    | 'testResultsPath'
+    | 'openApiPath'
+    | 'graphQlSchemaPath'
+    | 'telemetrySummaryPath'
+    | 'traceSummaryPath',
+): string | null {
+  const configuredPath = config.runtime?.[key];
+  const configuredCandidates =
+    configuredPath === undefined
+      ? []
+      : [
+          path.isAbsolute(configuredPath)
+            ? configuredPath
+            : path.join(manifest.path, configuredPath),
+        ];
+  const discoveredCandidates = DISCOVERABLE_RUNTIME_ARTIFACTS[key].map((candidate) =>
+    path.join(manifest.path, candidate),
+  );
+
+  for (const candidate of [...configuredCandidates, ...discoveredCandidates]) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return configuredCandidates[0] ?? null;
 }
 
 function clamp01(value: number): number {
@@ -77,12 +152,9 @@ function externalCoverageSignal(
   manifest: RepoManifest,
   config: OmniLinkConfig,
 ): RuntimeSignal | null {
-  const coveragePath = config.runtime?.coverageSummaryPath;
-  if (!config.runtime?.enabled || !coveragePath) return null;
-
-  const resolvedPath = path.isAbsolute(coveragePath)
-    ? coveragePath
-    : path.join(manifest.path, coveragePath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, 'coverageSummaryPath');
+  if (!resolvedPath) return null;
   const json = readJsonIfPresent(resolvedPath);
   const total = json?.total as { lines?: { pct?: number } } | undefined;
   const pct = total?.lines?.pct;
@@ -109,12 +181,9 @@ function externalCoverageSignal(
 }
 
 function testResultsSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
-  const resultsPath = config.runtime?.testResultsPath;
-  if (!config.runtime?.enabled || !resultsPath) return null;
-
-  const resolvedPath = path.isAbsolute(resultsPath)
-    ? resultsPath
-    : path.join(manifest.path, resultsPath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, 'testResultsPath');
+  if (!resolvedPath) return null;
   const json = readJsonIfPresent(resolvedPath);
   if (!json) return null;
 
@@ -153,12 +222,9 @@ function testResultsSignal(manifest: RepoManifest, config: OmniLinkConfig): Runt
 }
 
 function openApiSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
-  const configuredPath = config.runtime?.openApiPath;
-  if (!config.runtime?.enabled || !configuredPath) return null;
-
-  const resolvedPath = path.isAbsolute(configuredPath)
-    ? configuredPath
-    : path.join(manifest.path, configuredPath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, 'openApiPath');
+  if (!resolvedPath) return null;
   const json = readJsonIfPresent(resolvedPath);
   if (json) {
     const pathsObject = json.paths as Record<string, Record<string, unknown>> | undefined;
@@ -217,12 +283,9 @@ function openApiSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeS
 }
 
 function graphQlSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
-  const configuredPath = config.runtime?.graphQlSchemaPath;
-  if (!config.runtime?.enabled || !configuredPath) return null;
-
-  const resolvedPath = path.isAbsolute(configuredPath)
-    ? configuredPath
-    : path.join(manifest.path, configuredPath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, 'graphQlSchemaPath');
+  if (!resolvedPath) return null;
   const json = readJsonIfPresent(resolvedPath);
   if (json) {
     const schema =
@@ -278,12 +341,9 @@ function graphQlSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeS
 }
 
 function telemetrySignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
-  const configuredPath = config.runtime?.telemetrySummaryPath;
-  if (!config.runtime?.enabled || !configuredPath) return null;
-
-  const resolvedPath = path.isAbsolute(configuredPath)
-    ? configuredPath
-    : path.join(manifest.path, configuredPath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, 'telemetrySummaryPath');
+  if (!resolvedPath) return null;
   const json = readJsonIfPresent(resolvedPath);
   if (!json) return null;
 
@@ -322,12 +382,9 @@ function telemetrySignal(manifest: RepoManifest, config: OmniLinkConfig): Runtim
 }
 
 function traceSignal(manifest: RepoManifest, config: OmniLinkConfig): RuntimeSignal | null {
-  const configuredPath = config.runtime?.traceSummaryPath;
-  if (!config.runtime?.enabled || !configuredPath) return null;
-
-  const resolvedPath = path.isAbsolute(configuredPath)
-    ? configuredPath
-    : path.join(manifest.path, configuredPath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, 'traceSummaryPath');
+  if (!resolvedPath) return null;
   const json = readJsonIfPresent(resolvedPath);
   if (!json) return null;
 
@@ -371,12 +428,9 @@ function artifactPresenceSignal(
   kind: RuntimeSignal['kind'],
   weight: number,
 ): RuntimeSignal | null {
-  const configuredPath = config.runtime?.[key];
-  if (!config.runtime?.enabled || !configuredPath) return null;
-
-  const resolvedPath = path.isAbsolute(configuredPath)
-    ? configuredPath
-    : path.join(manifest.path, configuredPath);
+  if (!config.runtime?.enabled) return null;
+  const resolvedPath = resolveRuntimeArtifactPath(manifest, config, key);
+  if (!resolvedPath) return null;
   if (!fs.existsSync(resolvedPath)) return null;
 
   return {

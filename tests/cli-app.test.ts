@@ -134,6 +134,42 @@ function createDeps(overrides: Partial<CliDeps> = {}): CliDeps {
       statePath: '/tmp/daemon-state.json',
     })),
     owners: vi.fn(async () => ({ owners: [], perRepo: {} })),
+    authorityStatus: vi.fn(async () => ({
+      authority: {
+        docsRepo: '/tmp/docs',
+        phaseMode: 'reconciliation',
+        currentPhase: 'BOOTSTRAP',
+        blockedWorkClasses: ['Backend calls'],
+        frozenFeatures: [],
+        authoritativeApiSurface: {
+          sourceFile: '/tmp/docs/API_CONTRACT.md',
+          procedures: ['task.create'],
+          procedureContracts: [],
+          errorCodes: [],
+          baseUrls: [],
+        },
+        authoritativeSchemaSurface: {
+          sourceFile: '/tmp/docs/schema.sql',
+          tables: ['tasks'],
+          views: [],
+        },
+      },
+      findings: [],
+      blockedApply: true,
+      procedureCoverage: {
+        docs: 1,
+        backend: 2,
+        iosCalls: 1,
+        bridges: 1,
+        docsOnly: [],
+        backendOnly: ['task.accept'],
+        obsoleteCalls: [],
+        payloadDrift: [],
+      },
+      recommendations: [
+        'update API_CONTRACT.md to declare backend procedures that are already live',
+      ],
+    })),
     impactFromRefs: vi.fn(async () => [{ repo: 'repo', file: 'src/ref.ts' }]),
     impactFromUncommitted: vi.fn(async () => [{ repo: 'repo', file: 'src/index.ts' }]),
     health: vi.fn(async () => ({ overall: 82, perRepo: { repo: { overall: 82 } } })),
@@ -257,6 +293,56 @@ describe('engine/cli-app runCli', () => {
     expect(impactIo.stdout).toEqual([
       JSON.stringify([{ repo: 'repo', file: 'src/index.ts' }], null, 2),
     ]);
+  });
+
+  it('emits JSON for authority-status', async () => {
+    const { io, stdout } = createIo();
+    const deps = createDeps();
+
+    expect(await runCli(['authority-status', '--config', '/tmp/config.json'], io, deps)).toBe(0);
+    expect(stdout).toEqual([
+      JSON.stringify(
+        {
+          authority: {
+            docsRepo: '/tmp/docs',
+            phaseMode: 'reconciliation',
+            currentPhase: 'BOOTSTRAP',
+            blockedWorkClasses: ['Backend calls'],
+            frozenFeatures: [],
+            authoritativeApiSurface: {
+              sourceFile: '/tmp/docs/API_CONTRACT.md',
+              procedures: ['task.create'],
+              procedureContracts: [],
+              errorCodes: [],
+              baseUrls: [],
+            },
+            authoritativeSchemaSurface: {
+              sourceFile: '/tmp/docs/schema.sql',
+              tables: ['tasks'],
+              views: [],
+            },
+          },
+          findings: [],
+          blockedApply: true,
+          procedureCoverage: {
+            docs: 1,
+            backend: 2,
+            iosCalls: 1,
+            bridges: 1,
+            docsOnly: [],
+            backendOnly: ['task.accept'],
+            obsoleteCalls: [],
+            payloadDrift: [],
+          },
+          recommendations: [
+            'update API_CONTRACT.md to declare backend procedures that are already live',
+          ],
+        },
+        null,
+        2,
+      ),
+    ]);
+    expect(deps.authorityStatus).toHaveBeenCalledTimes(1);
   });
 
   it('emits JSON for publish-review and passes through PR metadata', async () => {

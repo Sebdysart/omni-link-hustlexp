@@ -19,6 +19,10 @@ export interface SwiftTrpcCall {
   line: number;
   router: string;
   procedure: string;
+  inputType?: string;
+  outputType?: string;
+  inputTypeDef?: TypeDef;
+  outputTypeDef?: TypeDef;
 }
 
 export interface BackendProcedureRef {
@@ -41,7 +45,11 @@ export interface SwiftTrpcBridgeAnalysis {
 }
 
 const DEFAULT_SWIFT_TRPC_PATTERN =
-  'trpc\\.call\\(router:\\s*"(?<router>[A-Za-z_][A-Za-z0-9_]*)"\\s*,\\s*procedure:\\s*"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)"\\s*\\)';
+  'trpc\\.call\\(\\s*router:\\s*"(?<router>[A-Za-z_][A-Za-z0-9_]*)"\\s*,\\s*procedure:\\s*"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)"';
+
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/');
+}
 
 function uniquePatterns(patterns: string[]): string[] {
   const seen = new Set<string>();
@@ -67,12 +75,249 @@ function patternCandidates(patternSource: string): string[] {
   ]);
 }
 
+function lineNumberForIndex(source: string, index: number): number {
+  return source.slice(0, index).split('\n').length;
+}
+
 function emptyType(name: string, repo: string, file = 'unknown', line = 0): TypeDef {
   return {
     name,
     fields: [],
     source: { repo, file, line },
   };
+}
+
+function compareFields(
+  key: string,
+  label: 'input' | 'output',
+  authorityType: TypeDef,
+  actualType: TypeDef,
+  provider: { repo: string; file: string; line: number },
+  consumer: { repo: string; file: string; line: number },
+): Mismatch[] {
+  if (authorityType.fields.length === 0 || actualType.fields.length === 0) {
+    return [];
+  }
+
+  const mismatches: Mismatch[] = [];
+  const authorityFields = new Map(authorityType.fields.map((field) => [field.name, field]));
+  const actualFields = new Map(actualType.fields.map((field) => [field.name, field]));
+
+  for (const [fieldName, authorityField] of authorityFields) {
+    const actualField = actualFields.get(fieldName);
+    if (!actualField) {
+      mismatches.push(
+        bridgeMismatch(
+          'missing-field',
+          'warning',
+          `Swift ${label} payload for '${key}' is missing '${fieldName}' from the docs authority.`,
+          {
+            repo: provider.repo,
+            file: provider.file,
+            line: provider.line,
+            field: fieldName,
+          },
+          {
+            repo: consumer.repo,
+            file: consumer.file,
+            line: consumer.line,
+            field: fieldName,
+          },
+        ),
+      );
+      continue;
+    }
+
+    if (authorityField.type !== actualField.type) {
+      mismatches.push(
+        bridgeMismatch(
+          'type-mismatch',
+          'warning',
+          `Swift ${label} payload for '${key}.${fieldName}' uses '${actualField.type}', but docs authority expects '${authorityField.type}'.`,
+          {
+            repo: provider.repo,
+            file: provider.file,
+            line: provider.line,
+            field: fieldName,
+          },
+          {
+            repo: consumer.repo,
+            file: consumer.file,
+            line: consumer.line,
+            field: fieldName,
+          },
+        ),
+      );
+    }
+  }
+
+  for (const [fieldName] of actualFields) {
+    if (!authorityFields.has(fieldName)) {
+      mismatches.push(
+        bridgeMismatch(
+          'extra-field',
+          'info',
+          `Swift ${label} payload for '${key}' includes '${fieldName}', which is not declared in the docs authority.`,
+          {
+            repo: provider.repo,
+            file: provider.file,
+            line: provider.line,
+            field: fieldName,
+          },
+          {
+            repo: consumer.repo,
+            file: consumer.file,
+            line: consumer.line,
+            field: fieldName,
+          },
+        ),
+      );
+    }
+  }
+
+  return mismatches;
+}
+
+function simplifyTypeExpression(expression: string | undefined): string | undefined {
+  if (!expression) {
+    return undefined;
+  }
+
+  const normalized = expression.replace(/\s+/g, ' ').trim();
+  if (normalized === '') {
+    return undefined;
+  }
+
+  if (normalized.startsWith('Schemas.')) {
+    return normalized.slice('Schemas.'.length);
+  }
+
+  const explicitType = normalized.match(/^([A-Za-z_][A-Za-z0-9_<>.?]*(?:\[\])*)/);
+  if (explicitType) {
+    return explicitType[1];
+  }
+
+  if (normalized.startsWith('z.object(')) {
+    return 'inline-object';
+  }
+
+  if (normalized.startsWith('z.array(')) {
+    return 'array';
+  }
+
+  return normalized.slice(0, 40);
+}
+
+function findMatchingBrace(source: string, openIndex: number): number {
+  let depth = 0;
+
+  for (let index = openIndex; index < source.length; index++) {
+    const char = source[index];
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1;
+}
+
+function extractSwiftTypeDefinitions(
+  source: string,
+  repo: string,
+  file: string,
+): Map<string, TypeDef> {
+  const results = new Map<string, TypeDef>();
+  const typePattern =
+    /(?:^|\n)\s*(?:private\s+|fileprivate\s+|internal\s+|public\s+)?(?:struct|class)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^\n{]*Codable[^{]*\{/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = typePattern.exec(source)) !== null) {
+    const name = match[1];
+    const openIndex = source.indexOf('{', match.index);
+    if (openIndex === -1) {
+      continue;
+    }
+
+    const closeIndex = findMatchingBrace(source, openIndex);
+    if (closeIndex === -1) {
+      continue;
+    }
+
+    const body = source.slice(openIndex + 1, closeIndex);
+    const fields = body
+      .split('\n')
+      .map((line) => line.trim())
+      .map((line) => line.replace(/\/\/.*$/, '').trim())
+      .flatMap((line) => {
+        const fieldMatch =
+          /^(?:@[\w().]+(?:\s+)?)*(?:private\s+|fileprivate\s+|internal\s+|public\s+)?(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=]+?)(?:\s*=.*)?$/.exec(
+            line,
+          );
+        if (!fieldMatch) {
+          return [];
+        }
+
+        return [
+          {
+            name: fieldMatch[1],
+            type: fieldMatch[2].trim(),
+            optional: /\?$/.test(fieldMatch[2].trim()),
+          },
+        ];
+      });
+
+    results.set(name, {
+      name,
+      fields,
+      source: {
+        repo,
+        file,
+        line: lineNumberForIndex(source, match.index),
+      },
+      sourceKind: 'semantic',
+      confidence: fields.length > 0 ? 0.83 : 0.69,
+      provenance: [
+        {
+          sourceKind: 'semantic',
+          adapter: 'hustlexp-swift-trpc-bridge',
+          detail: 'Swift Codable type definition',
+          confidence: fields.length > 0 ? 0.83 : 0.69,
+        },
+      ],
+    });
+  }
+
+  return results;
+}
+
+function parseSwiftCallOutputType(source: string, matchIndex: number): string | undefined {
+  const prefix = source.slice(Math.max(0, matchIndex - 220), matchIndex);
+  const outputMatch =
+    /(?:let|var)\s+[^:=]+\s*:\s*([A-Za-z_][A-Za-z0-9_<>.? ,]*(?:\[\])*)\s*=\s*try\s+await\s*$/.exec(
+      prefix,
+    );
+  return outputMatch?.[1]?.trim();
+}
+
+function parseSwiftCallInputType(callSnippet: string): string | undefined {
+  const constructorMatch = /input:\s*([A-Za-z_][A-Za-z0-9_<>.?]*(?:\[\])*)\s*\(/.exec(callSnippet);
+  if (constructorMatch) {
+    return constructorMatch[1];
+  }
+
+  const typedNilMatch = /input:\s*([A-Za-z_][A-Za-z0-9_<>.?]*(?:\[\])*)\s*\?/.exec(callSnippet);
+  if (typedNilMatch) {
+    return typedNilMatch[1];
+  }
+
+  return undefined;
 }
 
 function walkSwiftFiles(repo: RepoConfig): string[] {
@@ -104,7 +349,10 @@ function walkSwiftFiles(repo: RepoConfig): string[] {
         !ignoreResolver.isIgnored(fullPath) &&
         !entry.name.endsWith('Tests.swift')
       ) {
-        results.push(fullPath);
+        const relativePath = normalizePath(path.relative(repo.path, fullPath));
+        if (relativePath.includes('/Services/') || relativePath.endsWith('/TRPCClient.swift')) {
+          results.push(fullPath);
+        }
       }
     }
   }
@@ -114,14 +362,16 @@ function walkSwiftFiles(repo: RepoConfig): string[] {
 
 export function extractSwiftTrpcCalls(repo: RepoConfig, patternSource: string): SwiftTrpcCall[] {
   const swiftFiles = walkSwiftFiles(repo);
-
   const fileSources = swiftFiles.flatMap((filePath) => {
     try {
+      const relPath = normalizePath(path.relative(repo.path, filePath));
+      const source = fs.readFileSync(filePath, 'utf-8');
       return [
         {
           filePath,
-          relPath: path.relative(repo.path, filePath).replace(/\\/g, '/'),
-          source: fs.readFileSync(filePath, 'utf-8'),
+          relPath,
+          source,
+          typeDefs: extractSwiftTypeDefinitions(source, repo.name, relPath),
         },
       ];
     } catch {
@@ -144,26 +394,37 @@ export function extractSwiftTrpcCalls(repo: RepoConfig, patternSource: string): 
     const calls: SwiftTrpcCall[] = [];
 
     for (const fileSource of fileSources) {
-      const lines = fileSource.source.split('\n');
-      for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
-        const line = lines[lineNumber];
-        callPattern.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = callPattern.exec(line)) !== null) {
-          const router = match.groups?.router ?? match[1];
-          const procedure = match.groups?.procedure ?? match[2];
-          if (!router || !procedure) {
-            if (match[0] === '') break;
-            continue;
+      callPattern.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = callPattern.exec(fileSource.source)) !== null) {
+        const router = match.groups?.router ?? match[1];
+        const procedure = match.groups?.procedure ?? match[2];
+        if (!router || !procedure) {
+          if (match[0] === '') {
+            break;
           }
-          calls.push({
-            repo: repo.name,
-            file: fileSource.relPath,
-            line: lineNumber + 1,
-            router,
-            procedure,
-          });
-          if (match[0] === '') break;
+          continue;
+        }
+
+        const matchIndex = match.index ?? 0;
+        const outputType = parseSwiftCallOutputType(fileSource.source, matchIndex);
+        const inputType = parseSwiftCallInputType(
+          fileSource.source.slice(matchIndex, Math.min(fileSource.source.length, matchIndex + 400)),
+        );
+        calls.push({
+          repo: repo.name,
+          file: fileSource.relPath,
+          line: lineNumberForIndex(fileSource.source, matchIndex),
+          router,
+          procedure,
+          inputType,
+          outputType,
+          inputTypeDef: inputType ? fileSource.typeDefs.get(inputType) : undefined,
+          outputTypeDef: outputType ? fileSource.typeDefs.get(outputType) : undefined,
+        });
+
+        if (match[0] === '') {
+          break;
         }
       }
     }
@@ -176,21 +437,239 @@ export function extractSwiftTrpcCalls(repo: RepoConfig, patternSource: string): 
   return [];
 }
 
+function parseRouterImports(indexSource: string, indexPath: string): Map<string, string> {
+  const imports = new Map<string, string>();
+  const importPattern = /import\s+\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\s+from\s+'(\.\/[^']+)';/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = importPattern.exec(indexSource)) !== null) {
+    const variableName = match[1];
+    const specifier = match[2];
+    imports.set(
+      variableName,
+      normalizePath(
+        path.relative(
+          path.dirname(indexPath),
+          path.resolve(path.dirname(indexPath), `${specifier}.ts`),
+        ),
+      ),
+    );
+  }
+
+  return imports;
+}
+
+function extractRouteFiles(
+  indexSource: string,
+  indexPath: string,
+): Array<{ route: string; file: string }> {
+  const imports = parseRouterImports(indexSource, indexPath);
+  const routerBodyMatch = /export const appRouter = router\(\{([\s\S]*?)\}\);/m.exec(indexSource);
+  if (!routerBodyMatch) {
+    return [];
+  }
+
+  const results: Array<{ route: string; file: string }> = [];
+  const routePattern = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*,?$/gm;
+  let match: RegExpExecArray | null;
+
+  while ((match = routePattern.exec(routerBodyMatch[1])) !== null) {
+    const route = match[1];
+    const routerVariable = match[2];
+    const file = imports.get(routerVariable);
+    if (file) {
+      results.push({ route, file });
+    }
+  }
+
+  return results;
+}
+
+function enrichWithManifestTypes(
+  manifest: EcosystemGraph['repos'][number],
+  file: string,
+  procedure: string,
+  line: number,
+): Pick<BackendProcedureRef, 'inputType' | 'outputType'> {
+  const normalizedFile = normalizePath(file);
+  const matches = manifest.apiSurface.procedures
+    .filter((entry) => normalizePath(entry.file) === normalizedFile && entry.name === procedure)
+    .sort((left, right) => Math.abs(left.line - line) - Math.abs(right.line - line));
+  const closest = matches[0];
+
+  return {
+    inputType: closest?.inputType,
+    outputType: closest?.outputType,
+  };
+}
+
+function extractProcedureInputType(snippet: string): string | undefined {
+  const inputMatch = /\.input\(([\s\S]{0,240}?)\)\s*\.(?:query|mutation|subscription)\s*\(/.exec(
+    snippet,
+  );
+  return simplifyTypeExpression(inputMatch?.[1]);
+}
+
+function extractTopLevelRouterEntries(
+  source: string,
+): Array<{ name: string; kind: BackendProcedureRef['kind']; snippet: string; line: number }> {
+  const routerOpenMatch = /router\(\{/.exec(source);
+  if (!routerOpenMatch) {
+    return [];
+  }
+
+  const openBraceIndex = source.indexOf('{', routerOpenMatch.index);
+  if (openBraceIndex === -1) {
+    return [];
+  }
+
+  const closeBraceIndex = findMatchingBrace(source, openBraceIndex);
+  if (closeBraceIndex === -1) {
+    return [];
+  }
+
+  const body = source.slice(openBraceIndex + 1, closeBraceIndex);
+  const lines = body.split('\n');
+  const entries: Array<{
+    name: string;
+    kind: BackendProcedureRef['kind'];
+    snippet: string;
+    line: number;
+  }> = [];
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let currentEntry:
+    | {
+        name: string;
+        startLine: number;
+        snippetLines: string[];
+      }
+    | undefined;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const trimmed = line.trim();
+    const propertyMatch =
+      braceDepth === 0 && parenDepth === 0 && bracketDepth === 0
+        ? /^([A-Za-z_][A-Za-z0-9_]*)\s*:/.exec(trimmed)
+        : null;
+
+    if (propertyMatch) {
+      if (currentEntry) {
+        const snippet = currentEntry.snippetLines.join('\n');
+        const kindMatch = /\.(query|mutation|subscription)\s*\(/.exec(snippet);
+        if (kindMatch) {
+          entries.push({
+            name: currentEntry.name,
+            kind: kindMatch[1] as BackendProcedureRef['kind'],
+            snippet,
+            line: currentEntry.startLine,
+          });
+        }
+      }
+
+      currentEntry = {
+        name: propertyMatch[1],
+        startLine: lineIndex + lineNumberForIndex(source, openBraceIndex),
+        snippetLines: [line],
+      };
+    } else if (currentEntry) {
+      currentEntry.snippetLines.push(line);
+    }
+
+    for (const char of line) {
+      if (char === '{') {
+        braceDepth += 1;
+      } else if (char === '}') {
+        braceDepth = Math.max(0, braceDepth - 1);
+      } else if (char === '(') {
+        parenDepth += 1;
+      } else if (char === ')') {
+        parenDepth = Math.max(0, parenDepth - 1);
+      } else if (char === '[') {
+        bracketDepth += 1;
+      } else if (char === ']') {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+      }
+    }
+  }
+
+  if (currentEntry) {
+    const snippet = currentEntry.snippetLines.join('\n');
+    const kindMatch = /\.(query|mutation|subscription)\s*\(/.exec(snippet);
+    if (kindMatch) {
+      entries.push({
+        name: currentEntry.name,
+        kind: kindMatch[1] as BackendProcedureRef['kind'],
+        snippet,
+        line: currentEntry.startLine,
+      });
+    }
+  }
+
+  return entries;
+}
+
+function extractRouterProcedures(
+  source: string,
+  repoId: string,
+  router: string,
+  relFile: string,
+  manifest: EcosystemGraph['repos'][number],
+): BackendProcedureRef[] {
+  return extractTopLevelRouterEntries(source).map((entry) => {
+    const semanticTypes = enrichWithManifestTypes(manifest, relFile, entry.name, entry.line);
+    return {
+      repo: repoId,
+      router,
+      procedure: entry.name,
+      kind: entry.kind,
+      file: relFile,
+      line: entry.line,
+      inputType: extractProcedureInputType(entry.snippet) ?? semanticTypes.inputType,
+      outputType: semanticTypes.outputType,
+    };
+  });
+}
+
 export function extractBackendProcedureRefs(
   manifest: EcosystemGraph['repos'][number],
+  backendRepoPath: string,
   authoritativeBackendRoot = path.join('backend', 'src'),
 ): BackendProcedureRef[] {
+  const normalizedRoot = normalizePath(authoritativeBackendRoot);
+  const indexPath = path.join(backendRepoPath, normalizedRoot, 'routers', 'index.ts');
+
+  try {
+    const indexSource = fs.readFileSync(indexPath, 'utf-8');
+    const routeFiles = extractRouteFiles(indexSource, indexPath);
+    const procedures = routeFiles.flatMap(({ route, file }) => {
+      const absolutePath = path.resolve(path.dirname(indexPath), file);
+      try {
+        const source = fs.readFileSync(absolutePath, 'utf-8');
+        const relFile = normalizePath(path.relative(backendRepoPath, absolutePath));
+        return extractRouterProcedures(source, manifest.repoId, route, relFile, manifest);
+      } catch {
+        return [];
+      }
+    });
+
+    if (procedures.length > 0) {
+      return procedures;
+    }
+  } catch {
+    // Fall back to the baseline manifest if source extraction is unavailable.
+  }
+
   return manifest.apiSurface.procedures
-    .filter((procedure) => {
-      const normalized = procedure.file.replace(/\\/g, '/');
-      return normalized.startsWith(authoritativeBackendRoot.replace(/\\/g, '/'));
-    })
+    .filter((procedure) => normalizePath(procedure.file).startsWith(normalizedRoot))
     .map((procedure) => ({
       repo: manifest.repoId,
       router: path.basename(procedure.file, path.extname(procedure.file)),
       procedure: procedure.name,
       kind: procedure.kind,
-      file: procedure.file,
+      file: normalizePath(procedure.file),
       line: procedure.line,
       inputType: procedure.inputType,
       outputType: procedure.outputType,
@@ -256,6 +735,20 @@ function bridgeMismatch(
   };
 }
 
+function preferredType(
+  primary: TypeDef | undefined,
+  fallback: TypeDef | undefined,
+  empty: TypeDef,
+): TypeDef {
+  if (primary && (primary.fields.length > 0 || primary.name !== 'unknown')) {
+    return primary;
+  }
+  if (fallback && (fallback.fields.length > 0 || fallback.name !== 'unknown')) {
+    return fallback;
+  }
+  return empty;
+}
+
 export function analyzeSwiftTrpcBridge(
   config: OmniLinkConfig,
   graph: EcosystemGraph,
@@ -275,12 +768,19 @@ export function analyzeSwiftTrpcBridge(
   const iosCalls = extractSwiftTrpcCalls(iosRepo, bridgeConfig.clientCallPattern ?? '');
   const backendProcedures = extractBackendProcedureRefs(
     backendManifest,
+    bridgeConfig.backendRepo,
     bridgeConfig.authoritativeBackendRoot,
   );
   const backendProcedureMap = new Map(
     backendProcedures.map((procedure) => [`${procedure.router}.${procedure.procedure}`, procedure]),
   );
   const docsProcedures = new Set(authority?.authoritativeApiSurface.procedures ?? []);
+  const docsProcedureContracts = new Map(
+    (authority?.authoritativeApiSurface.procedureContracts ?? []).map((contract) => [
+      contract.procedure,
+      contract,
+    ]),
+  );
 
   const bridges: ApiBridge[] = [];
   const mismatches: Mismatch[] = [];
@@ -289,6 +789,7 @@ export function analyzeSwiftTrpcBridge(
   for (const call of iosCalls) {
     const key = `${call.router}.${call.procedure}`;
     const provider = backendProcedureMap.get(key);
+    const docsContract = docsProcedureContracts.get(key);
     if (!provider) {
       mismatches.push(
         bridgeMismatch(
@@ -323,6 +824,80 @@ export function analyzeSwiftTrpcBridge(
       continue;
     }
 
+    const defaultInputType = emptyType(
+      provider.inputType ?? call.inputType ?? 'unknown',
+      backendManifest.repoId,
+      provider.file,
+      provider.line,
+    );
+    const defaultOutputType = emptyType(
+      provider.outputType ?? call.outputType ?? 'unknown',
+      backendManifest.repoId,
+      provider.file,
+      provider.line,
+    );
+    const contractInputType = preferredType(
+      docsContract?.inputType,
+      call.inputTypeDef,
+      defaultInputType,
+    );
+    const contractOutputType = preferredType(
+      docsContract?.outputType,
+      call.outputTypeDef,
+      defaultOutputType,
+    );
+    const payloadMismatches = docsContract
+      ? [
+          ...compareFields(
+            key,
+            'input',
+            docsContract.inputType,
+            call.inputTypeDef ?? defaultInputType,
+            {
+              repo: authority?.docsRepo ? 'hustlexp-docs' : backendManifest.repoId,
+              file: authority?.authoritativeApiSurface.sourceFile ?? provider.file,
+              line: docsContract.inputType.source.line,
+            },
+            {
+              repo: iosRepo.name,
+              file: call.file,
+              line: call.line,
+            },
+          ),
+          ...compareFields(
+            key,
+            'output',
+            docsContract.outputType,
+            call.outputTypeDef ?? defaultOutputType,
+            {
+              repo: authority?.docsRepo ? 'hustlexp-docs' : backendManifest.repoId,
+              file: authority?.authoritativeApiSurface.sourceFile ?? provider.file,
+              line: docsContract.outputType.source.line,
+            },
+            {
+              repo: iosRepo.name,
+              file: call.file,
+              line: call.line,
+            },
+          ),
+        ]
+      : [];
+
+    mismatches.push(...payloadMismatches);
+    if (payloadMismatches.length > 0) {
+      findings.push(
+        bridgeFinding(
+          'bridge_mismatch',
+          'warning',
+          'Swift payload drifts from docs authority',
+          `The Swift client payload for '${key}' does not match the authority contract shape.`,
+          iosRepo.name,
+          call.file,
+          call.line,
+        ),
+      );
+    }
+
     bridges.push({
       consumer: {
         repo: iosRepo.name,
@@ -335,19 +910,15 @@ export function analyzeSwiftTrpcBridge(
         handler: `${provider.router}.${provider.procedure}`,
       },
       contract: {
-        inputType: emptyType(
-          provider.inputType ?? 'unknown',
-          backendManifest.repoId,
-          provider.file,
-          provider.line,
-        ),
-        outputType: emptyType(
-          provider.outputType ?? 'unknown',
-          backendManifest.repoId,
-          provider.file,
-          provider.line,
-        ),
-        matchStatus: docsProcedures.has(key) ? 'exact' : 'compatible',
+        inputType: contractInputType,
+        outputType: contractOutputType,
+        matchStatus:
+          payloadMismatches.some((mismatch) => mismatch.kind === 'type-mismatch') ||
+          payloadMismatches.some((mismatch) => mismatch.kind === 'missing-field')
+            ? 'mismatch'
+            : docsProcedures.has(key)
+              ? 'exact'
+              : 'compatible',
       },
       sourceKind: 'mixed',
       confidence: docsProcedures.has(key) ? 0.95 : 0.82,
@@ -421,7 +992,10 @@ export function analyzeSwiftTrpcBridge(
   }
 
   for (const docsProcedure of docsProcedures) {
-    if (backendProcedureMap.has(docsProcedure)) continue;
+    if (backendProcedureMap.has(docsProcedure)) {
+      continue;
+    }
+
     mismatches.push(
       bridgeMismatch(
         'missing-procedure',

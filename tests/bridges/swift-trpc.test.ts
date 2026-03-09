@@ -168,12 +168,31 @@ describe('swift tRPC bridge', () => {
     expect(analysis.iosCalls.map((call) => `${call.router}.${call.procedure}`)).toEqual(
       expect.arrayContaining(['task.create', 'messaging.sendMessage', 'legacy.oldProcedure']),
     );
+    expect(analysis.iosCalls.find((call) => call.router === 'task')?.inputType).toBe(
+      'CreateTaskInput',
+    );
+    expect(analysis.iosCalls.find((call) => call.router === 'task')?.outputType).toBe(
+      'TaskResponse',
+    );
+    expect(
+      analysis.iosCalls
+        .find((call) => call.router === 'task')
+        ?.inputTypeDef?.fields.map((field) => field.name),
+    ).toEqual(['title', 'price']);
     expect(
       analysis.backendProcedures.map((procedure) => `${procedure.router}.${procedure.procedure}`),
     ).toEqual(expect.arrayContaining(['task.create', 'messaging.sendMessage']));
     expect(analysis.bridges.map((bridge) => bridge.provider.route)).toEqual(
       expect.arrayContaining(['task.create', 'messaging.sendMessage']),
     );
+    expect(
+      analysis.mismatches.some(
+        (mismatch) =>
+          mismatch.kind === 'extra-field' &&
+          mismatch.description.includes('messaging.sendMessage') &&
+          mismatch.description.includes('delivered'),
+      ),
+    ).toBe(true);
     expect(analysis.findings.map((finding) => finding.kind)).toEqual(
       expect.arrayContaining(['bridge_obsolete_call', 'bridge_mismatch']),
     );

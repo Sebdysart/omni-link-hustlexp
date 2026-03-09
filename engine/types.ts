@@ -389,6 +389,7 @@ export interface ImpactPath extends AnalysisMetadata {
 export interface AuthoritativeApiSurface extends AnalysisMetadata {
   sourceFile: string;
   procedures: string[];
+  procedureContracts: AuthorityProcedureContract[];
   errorCodes: string[];
   baseUrls: string[];
 }
@@ -397,6 +398,12 @@ export interface AuthoritativeSchemaSurface extends AnalysisMetadata {
   sourceFile: string;
   tables: string[];
   views: string[];
+}
+
+export interface AuthorityProcedureContract extends AnalysisMetadata {
+  procedure: string;
+  inputType: TypeDef;
+  outputType: TypeDef;
 }
 
 export interface AuthorityState extends AnalysisMetadata {
@@ -463,6 +470,23 @@ export interface EcosystemDigest {
   };
   reviewFindingSummary?: Record<string, number>;
   tokenCount: number;
+}
+
+export interface AuthorityStatusResult {
+  authority: AuthorityState | null;
+  findings: ReviewFinding[];
+  blockedApply: boolean;
+  procedureCoverage: {
+    docs: number;
+    backend: number;
+    iosCalls: number;
+    bridges: number;
+    docsOnly: string[];
+    backendOnly: string[];
+    obsoleteCalls: string[];
+    payloadDrift: string[];
+  };
+  recommendations: string[];
 }
 
 // --- Evolution Output ---

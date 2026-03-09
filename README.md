@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
 [![Verification](https://img.shields.io/badge/verify:stress-passing-brightgreen.svg)](#verification)
-[![Tests](https://img.shields.io/badge/tests-488%2B4_live-brightgreen.svg)](#verification)
+[![Tests](https://img.shields.io/badge/tests-497%2B4_skipped-brightgreen.svg)](#verification)
 
 ## What it does
 
@@ -41,7 +41,9 @@ In max-tier HustleXP mode, the fork behaves like a local-first control plane for
 - **HustleXP workflow profile** -- one config flag turns on authority ingestion, Swift↔tRPC bridge analysis, path exclusions, ownership defaults, policy defaults, and daemon defaults for the three-repo HustleXP workspace.
 - **Docs authority layer** -- parses `CURRENT_PHASE.md`, `FINISHED_STATE.md`, `FEATURE_FREEZE.md`, `AI_GUARDRAILS.md`, `API_CONTRACT.md`, and `schema.sql` into first-class authority state.
 - **Swift↔tRPC bridge** -- correlates Swift client calls, backend procedures, and docs authority so stale calls, missing procedures, and undocumented endpoints are surfaced explicitly.
+- **Type-level bridge checks** -- compares Swift request/response models against docs contract shapes so payload drift is surfaced instead of only endpoint drift.
 - **Authority drift findings** -- reconciliation mode allows scan/review while blocking `apply`; strict mode turns unresolved authority drift into a hard policy gate.
+- **Authority reconciliation command** -- `authority-status` reports phase drift, docs/backend/Swift coverage gaps, payload drift, and the next reconciliation actions.
 - **Hybrid truth layer** -- Tree-sitter fallback plus compiler-backed TypeScript, Go, Python, Java, and Swift analyzers, plus GraphQL AST analysis with provenance and confidence.
 - **Branch-aware daemon state** -- SQLite-backed warm graph snapshots keyed by config and branch/worktree signature.
 - **Cross-repo API and type graphing** -- Routes, procedures, contracts, imports, symbol references, type lineage, dependency edges, and impact paths.
@@ -82,11 +84,30 @@ The tailored fork also adds `npm run verify:hustlexp`, which explicitly reruns t
 - Swift↔tRPC bridge extraction and mismatch detection
 - phase-drift enforcement
 - HustleXP fixture integration from `scan` through blocked `apply`
+- warm daemon reuse across the HustleXP workflow profile
+
+There is also a live-workspace benchmark for the real three-repo topology:
+
+```bash
+npm run benchmark:hustlexp:live -- --config /absolute/path/to/.omni-link.json
+```
+
+The live benchmark is intentionally stricter than the fixture suite on coverage, but realistic on latency. It currently asserts:
+
+- at least `60` docs procedures parsed from the authority repo
+- at least `200` backend procedures extracted from the authoritative router tree
+- at least `150` Swift tRPC calls discovered from the iOS repo
+- at least `140` direct Swift↔backend bridge matches
+- digest token count within the configured budget
+- cold daemon refresh under `20s`
+- warm `scan` and `health` under `1s`
+- warm `impact` under `2s`
+- warm `review-pr` under `1s`
 
 Current proof points from the verified state:
 
-- `488` core tests passing, plus live GitHub and GitLab provider tests executed in sandbox PR/MR flows
-- `90.6%` statement coverage
+- `497` tests passing, `4` live-provider tests skipped unless credentials are configured
+- `90.7%` statement coverage
 - `0` moderate-or-higher audit vulnerabilities
 - Live GitHub and GitLab metadata fetch plus publish validated through sandbox review targets
 - Cleanup verified: sandbox PRs/MRs are closed and temporary branches are deleted
@@ -371,9 +392,10 @@ npm run verify
 npm run verify:max
 npm run verify:stress
 npm run verify:hustlexp
+npm run benchmark:hustlexp:live -- --config /absolute/path/to/.omni-link.json
 ```
 
-`verify:stress` is the release bar. `verify:hustlexp` is the focused workflow bar for the tailored fork. It reruns upstream verification and then explicitly revalidates the authority layer, Swift↔tRPC bridge, phase-drift rules, and blocked-apply behavior on the HustleXP fixture workspace.
+`verify:stress` is the release bar. `verify:hustlexp` is the focused workflow bar for the tailored fork. It reruns upstream verification and then explicitly revalidates the authority layer, Swift↔tRPC bridge, phase-drift rules, blocked-apply behavior, and the warm-daemon benchmark path on the HustleXP fixture workspace. `benchmark:hustlexp:live` is the real-workspace bar for the actual three-repo HustleXP topology.
 
 ### CLI smoke test
 
@@ -388,6 +410,7 @@ npm run stress:full
 ```bash
 node dist/cli.js --help
 node dist/cli.js scan --config .omni-link.json
+node dist/cli.js authority-status --config .omni-link.json
 node dist/cli.js scan --markdown --config .omni-link.json
 node dist/cli.js health --config .omni-link.json
 node dist/cli.js evolve --config .omni-link.json

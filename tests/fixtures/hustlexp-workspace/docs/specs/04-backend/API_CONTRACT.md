@@ -18,8 +18,58 @@ Development: http://localhost:3000/trpc
 
 Create a new task.
 
+**Input:**
+
+```typescript
+{
+  title: string;
+  price: number;
+}
+```
+
+**Output:**
+
+```typescript
+{
+  id: string;
+  state: string;
+}
+```
+
 ## Notification Endpoints
+
+### messaging.sendMessage
+
+Send a message.
+
+**Input:**
+
+```typescript
+{
+  conversationId: string;
+  body: string;
+}
+```
+
+**Output:**
+
+```typescript
+{
+  id: string;
+  body: string;
+}
+```
 
 ### notification.getList
 
 Get notifications.
+
+**Input:** None
+
+**Output:**
+
+```typescript
+{
+  notifications: string[];
+}
+```

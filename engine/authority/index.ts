@@ -1,7 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { AuthorityState, OmniLinkConfig, EcosystemGraph, ReviewFinding } from '../types.js';
+import type {
+  AuthorityProcedureContract,
+  AuthorityState,
+  OmniLinkConfig,
+  EcosystemGraph,
+  ReviewFinding,
+  TypeDef,
+} from '../types.js';
 
 function readTextIfPresent(filePath: string): string {
   try {
@@ -57,6 +64,133 @@ function extractCurrentPhase(markdown: string): string {
 
 function extractApiProcedures(markdown: string): string[] {
   return [...markdown.matchAll(/^###\s+([A-Za-z0-9_]+\.[A-Za-z0-9_]+)/gm)].map((match) => match[1]);
+}
+
+function extractCodeBlock(section: string, heading: 'Input' | 'Output'): string | null {
+  const headingMatch = new RegExp(`\\*\\*${heading}:\\*\\*`, 'i').exec(section);
+  if (!headingMatch) {
+    return null;
+  }
+
+  const fromHeading = section.slice(headingMatch.index + headingMatch[0].length);
+  const noneMatch = fromHeading.match(/^\s*None\b/i);
+  if (noneMatch) {
+    return '';
+  }
+
+  const fenceMatch = fromHeading.match(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/);
+  return fenceMatch?.[1] ?? null;
+}
+
+function parseContractFields(block: string): TypeDef['fields'] {
+  if (block.trim() === '') {
+    return [];
+  }
+
+  const fields: TypeDef['fields'] = [];
+  let depth = 0;
+
+  for (const rawLine of block.split('\n')) {
+    const line = rawLine.replace(/\/\/.*$/, '').trim();
+    if (line === '') {
+      continue;
+    }
+
+    const openBraces = (line.match(/\{/g) ?? []).length;
+    const closeBraces = (line.match(/\}/g) ?? []).length;
+    const isFieldCandidate = depth <= 1;
+    const fieldMatch = /^([A-Za-z_][A-Za-z0-9_]*)(\?)?\s*:\s*([^;]+?)[,;]?$/.exec(line);
+    if (isFieldCandidate && fieldMatch) {
+      fields.push({
+        name: fieldMatch[1],
+        optional: fieldMatch[2] === '?',
+        type: fieldMatch[3].trim(),
+      });
+    }
+
+    depth += openBraces - closeBraces;
+  }
+
+  return fields;
+}
+
+function makeContractType(
+  name: string,
+  fields: TypeDef['fields'],
+  repo: string,
+  sourceFile: string,
+  line: number,
+): TypeDef {
+  return {
+    name,
+    fields,
+    source: {
+      repo,
+      file: sourceFile,
+      line,
+    },
+    sourceKind: 'mixed',
+    confidence: fields.length > 0 ? 0.88 : 0.72,
+    provenance: [
+      {
+        sourceKind: 'mixed',
+        adapter: 'hustlexp-authority',
+        detail: 'docs contract section',
+        confidence: fields.length > 0 ? 0.88 : 0.72,
+      },
+    ],
+  };
+}
+
+function extractProcedureContracts(
+  markdown: string,
+  sourceFile: string,
+  repo: string,
+): AuthorityProcedureContract[] {
+  const sectionPattern = /^###\s+([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\s*$/gm;
+  const matches = [...markdown.matchAll(sectionPattern)];
+  const contracts: AuthorityProcedureContract[] = [];
+
+  for (let index = 0; index < matches.length; index++) {
+    const match = matches[index];
+    const procedure = match[1];
+    const sectionStart = match.index ?? 0;
+    const sectionEnd = matches[index + 1]?.index ?? markdown.length;
+    const section = markdown.slice(sectionStart, sectionEnd);
+    const line = markdown.slice(0, sectionStart).split('\n').length;
+    const inputBlock = extractCodeBlock(section, 'Input');
+    const outputBlock = extractCodeBlock(section, 'Output');
+
+    contracts.push({
+      procedure,
+      inputType: makeContractType(
+        `${procedure.replace('.', '_')}_input`,
+        parseContractFields(inputBlock ?? ''),
+        repo,
+        sourceFile,
+        line,
+      ),
+      outputType: makeContractType(
+        `${procedure.replace('.', '_')}_output`,
+        parseContractFields(outputBlock ?? ''),
+        repo,
+        sourceFile,
+        line,
+      ),
+      sourceKind: 'mixed',
+      confidence: 0.9,
+      provenance: [
+        {
+          sourceKind: 'mixed',
+          adapter: 'hustlexp-authority',
+          detail: 'procedure contract extracted from docs',
+          confidence: 0.9,
+        },
+      ],
+    });
+  }
+
+  return contracts;
 }
 
 function extractBaseUrls(markdown: string): string[] {
@@ -159,6 +293,7 @@ export function loadAuthorityState(config: OmniLinkConfig): AuthorityState | nul
     authoritativeApiSurface: {
       sourceFile: apiContractPath,
       procedures: extractApiProcedures(apiContract),
+      procedureContracts: extractProcedureContracts(apiContract, apiContractPath, docsRepo),
       errorCodes: extractErrorCodes(apiContract),
       baseUrls: extractBaseUrls(apiContract),
       sourceKind: 'mixed',

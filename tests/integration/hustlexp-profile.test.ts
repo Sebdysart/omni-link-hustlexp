@@ -4,7 +4,15 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { apply, health, impactFromUncommitted, reviewPr, scan } from '../../engine/index.js';
+import {
+  apply,
+  authorityStatus,
+  health,
+  impactFromUncommitted,
+  reviewPr,
+  scan,
+  watch,
+} from '../../engine/index.js';
 import { loadConfig } from '../../engine/config.js';
 
 const fixtureRoot = path.resolve(
@@ -70,21 +78,33 @@ describe('HustleXP workflow profile integration', () => {
     const config = loadConfig(configPath);
 
     const scanResult = await scan(config);
+    const watchStatus = await watch(config, { once: true });
+    const warmScanResult = await scan(config);
     const healthResult = await health(config);
     const impactResult = await impactFromUncommitted(config);
     const reviewArtifact = await reviewPr(config, 'main', 'HEAD');
+    const authorityResult = await authorityStatus(config);
     const applyResult = await apply(config, 'main', 'HEAD');
 
     expect(config.workflowProfile).toBe('hustlexp');
     expect(config.authority?.enabled).toBe(true);
     expect(config.bridges?.swiftTrpc?.enabled).toBe(true);
     expect(scanResult.graph.authority?.currentPhase).toBe('BOOTSTRAP');
+    expect(watchStatus.running).toBe(true);
+    expect(warmScanResult.graph.authority?.currentPhase).toBe('BOOTSTRAP');
     expect(scanResult.graph.bridges.length).toBeGreaterThan(0);
+    expect(warmScanResult.graph.bridges.length).toBeGreaterThan(0);
     expect(scanResult.graph.bridges.some((bridge) => bridge.provider.route === 'task.create')).toBe(
       true,
     );
     expect(
+      warmScanResult.graph.bridges.some((bridge) => bridge.provider.route === 'task.create'),
+    ).toBe(true);
+    expect(
       (scanResult.graph.findings ?? []).some((finding) => finding.kind === 'authority_drift'),
+    ).toBe(true);
+    expect(
+      (warmScanResult.graph.findings ?? []).some((finding) => finding.kind === 'authority_drift'),
     ).toBe(true);
     expect(scanResult.context.digest.authorityStatus?.findingCount).toBeGreaterThan(0);
     expect(scanResult.context.digest.reviewFindingSummary?.authority_drift).toBeGreaterThan(0);
@@ -92,6 +112,14 @@ describe('HustleXP workflow profile integration', () => {
     expect(impactResult).toEqual([]);
     expect(reviewArtifact.findings.some((finding) => finding.kind === 'authority_drift')).toBe(
       true,
+    );
+    expect(authorityResult.procedureCoverage.backend).toBeGreaterThan(0);
+    expect(authorityResult.procedureCoverage.iosCalls).toBeGreaterThan(0);
+    expect(authorityResult.procedureCoverage.obsoleteCalls).toContain('legacy.oldProcedure');
+    expect(authorityResult.recommendations).toEqual(
+      expect.arrayContaining([
+        'reconcile CURRENT_PHASE.md upward to the implemented app/backend state',
+      ]),
     );
     expect(reviewArtifact.executionPlan?.blocked).toBe(true);
     expect(applyResult.executed).toBe(false);

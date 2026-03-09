@@ -123,7 +123,17 @@ describe('authority adapter', () => {
 
     expect(authority?.currentPhase).toBe('BOOTSTRAP');
     expect(authority?.authoritativeApiSurface.procedures).toEqual(
-      expect.arrayContaining(['task.create', 'notification.getList']),
+      expect.arrayContaining(['task.create', 'messaging.sendMessage', 'notification.getList']),
+    );
+    expect(
+      authority?.authoritativeApiSurface.procedureContracts.find(
+        (contract) => contract.procedure === 'task.create',
+      )?.inputType.fields,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'title', type: 'string' }),
+        expect.objectContaining({ name: 'price', type: 'number' }),
+      ]),
     );
     expect(authority?.authoritativeSchemaSurface.tables).toEqual(
       expect.arrayContaining(['users', 'tasks']),
@@ -179,7 +189,7 @@ describe('authority adapter', () => {
       expect.arrayContaining([
         'Docs phase lags iOS implementation',
         'Docs phase lags backend implementation',
-        'Backend API exceeds the docs authority',
+        'Bootstrap blocks backend calls but iOS client performs them',
         'Docs API contract is ahead of the backend',
       ]),
     );

@@ -1,6 +1,7 @@
 // engine/index.ts — Top-level orchestrator: wires scanner -> grapher -> context -> evolution -> quality
 
 import type {
+  AuthorityStatusResult,
   DaemonStatus,
   EcosystemDigest,
   EcosystemGraph,
@@ -36,7 +37,6 @@ import {
   rollbackExecutionPlan,
   type ExecutionResult,
 } from './execution/index.js';
-import { attachOwnersToGraph } from './ownership/index.js';
 import { evaluatePolicies } from './policy/index.js';
 import { detectSlop } from './quality/slop-detector.js';
 import { validateConventions } from './quality/convention-validator.js';
@@ -53,11 +53,12 @@ import {
   saveReviewArtifact,
   scoreRisk,
 } from './review/index.js';
-import { attachRuntimeSignals, rankEvolutionSuggestions } from './runtime/index.js';
+import { rankEvolutionSuggestions } from './runtime/index.js';
 import { scanRepo } from './scanner/index.js';
 import { defaultBaseRefForProvider, publishReviewArtifact } from './providers/index.js';
-import { analyzeAuthorityDrift, loadAuthorityState } from './authority/index.js';
+import { loadAuthorityState } from './authority/index.js';
 import { analyzeSwiftTrpcBridge } from './bridges/swift-trpc.js';
+import { enrichGraphForConfig } from './graph/enrichment.js';
 import type { FileCache } from './scanner/index.js';
 import type { HealthScoreResult } from './quality/health-scorer.js';
 import type { ReferenceCheckResult } from './quality/reference-checker.js';
@@ -95,6 +96,7 @@ export type {
   ReviewPublishResult,
   OwnerAssignment,
   DaemonStatus,
+  AuthorityStatusResult,
   ExecutionPlan,
 };
 
@@ -121,6 +123,56 @@ export interface OwnersResult {
   perRepo: Record<string, OwnerAssignment[]>;
 }
 
+const scanResultCache = new Map<string, ScanResult>();
+
+function scanCacheKey(config: OmniLinkConfig): string {
+  return configSha(config);
+}
+
+function cacheScanResult(config: OmniLinkConfig, result: ScanResult): void {
+  scanResultCache.set(scanCacheKey(config), result);
+}
+
+function getCachedScanResult(config: OmniLinkConfig): ScanResult | undefined {
+  return scanResultCache.get(scanCacheKey(config));
+}
+
+function invalidateCachedScanResult(config: OmniLinkConfig): void {
+  scanResultCache.delete(scanCacheKey(config));
+}
+
+function authorityRecommendations(status: AuthorityStatusResult): string[] {
+  if (!status.authority) {
+    return ['configure the docs authority repo before relying on apply or review gating'];
+  }
+
+  const recommendations: string[] = [];
+  if (status.authority.currentPhase.toLowerCase().includes('bootstrap')) {
+    recommendations.push('reconcile CURRENT_PHASE.md upward to the implemented app/backend state');
+  }
+  if (status.procedureCoverage.backendOnly.length > 0) {
+    recommendations.push(
+      'update API_CONTRACT.md to declare backend procedures that are already live',
+    );
+  }
+  if (status.procedureCoverage.docsOnly.length > 0) {
+    recommendations.push(
+      'either implement docs-declared procedures or remove stale docs contract entries',
+    );
+  }
+  if (status.procedureCoverage.obsoleteCalls.length > 0) {
+    recommendations.push('remove or retarget obsolete Swift tRPC calls');
+  }
+  if (status.procedureCoverage.payloadDrift.length > 0) {
+    recommendations.push('reconcile Swift payload models against the docs contract fields');
+  }
+  if (recommendations.length === 0) {
+    recommendations.push('authority reconciliation is clean on the current scan surface');
+  }
+
+  return recommendations;
+}
+
 const DEFAULT_SCAN_CONCURRENCY = 4;
 
 async function scanConfiguredRepos(config: OmniLinkConfig): Promise<RepoManifest[]> {
@@ -139,59 +191,34 @@ async function scanConfiguredRepos(config: OmniLinkConfig): Promise<RepoManifest
   );
 }
 
-function enrichGraph(graph: EcosystemGraph, config: OmniLinkConfig): EcosystemGraph {
-  let nextGraph = graph;
-
-  if (config.workflowProfile === 'hustlexp') {
-    const authority = loadAuthorityState(config);
-    const bridgeAnalysis = analyzeSwiftTrpcBridge(config, nextGraph, authority);
-    const authorityFindings = analyzeAuthorityDrift(nextGraph, authority, {
-      backendProcedureIds: bridgeAnalysis.backendProcedures.map(
-        (procedure) => `${procedure.router}.${procedure.procedure}`,
-      ),
-      iosCallCount: bridgeAnalysis.iosCalls.length,
-    });
-
-    nextGraph = {
-      ...nextGraph,
-      bridges: uniqueBy(
-        [...nextGraph.bridges, ...bridgeAnalysis.bridges],
-        (bridge) =>
-          `${bridge.consumer.repo}:${bridge.consumer.file}:${bridge.consumer.line}:${bridge.provider.repo}:${bridge.provider.route}`,
-      ),
-      contractMismatches: uniqueBy(
-        [...nextGraph.contractMismatches, ...bridgeAnalysis.mismatches],
-        (mismatch) =>
-          `${mismatch.kind}:${mismatch.provider.repo}:${mismatch.provider.file}:${mismatch.provider.field}:${mismatch.consumer.repo}:${mismatch.consumer.file}:${mismatch.description}`,
-      ),
-      authority: authority ?? undefined,
-      findings: uniqueBy(
-        [...(nextGraph.findings ?? []), ...authorityFindings, ...bridgeAnalysis.findings],
-        (finding) =>
-          `${finding.kind}:${finding.repo}:${finding.file}:${finding.line}:${finding.description}`,
-      ),
-    };
-  }
-
-  return attachRuntimeSignals(attachOwnersToGraph(nextGraph, config), config);
-}
-
 async function scanLive(config: OmniLinkConfig): Promise<ScanResult> {
   const manifests = await scanConfiguredRepos(config);
-  const graph = enrichGraph(buildEcosystemGraph(manifests), config);
+  const graph = enrichGraphForConfig(buildEcosystemGraph(manifests), config);
   const context = buildContext(graph, config);
   return { manifests, graph, context };
 }
 
-async function loadScanResult(config: OmniLinkConfig): Promise<ScanResult> {
+async function loadScanResult(
+  config: OmniLinkConfig,
+  options: { bypassSessionCache?: boolean } = {},
+): Promise<ScanResult> {
   if (config.daemon?.enabled && config.daemon.preferDaemon) {
+    const cached = options.bypassSessionCache ? undefined : getCachedScanResult(config);
+    if (cached) {
+      return cached;
+    }
+
     const state = await loadDaemonState(config);
     if (state) {
-      return {
+      const graph = enrichGraphForConfig(state.graph, config);
+      const context = buildContext(graph, config);
+      const result = {
         manifests: state.manifests,
-        graph: state.graph,
-        context: state.context,
+        graph,
+        context,
       };
+      cacheScanResult(config, result);
+      return result;
     }
   }
 
@@ -206,6 +233,9 @@ async function loadScanResult(config: OmniLinkConfig): Promise<ScanResult> {
       context: result.context,
       dirtyRepos: [],
     });
+  }
+  if (config.daemon?.enabled && config.daemon.preferDaemon) {
+    cacheScanResult(config, result);
   }
 
   return result;
@@ -227,7 +257,7 @@ export async function impact(
 
 export async function impactFromUncommitted(config: OmniLinkConfig): Promise<ImpactPath[]> {
   assertNotSimulateOnly(config, 'impact');
-  const result = await loadScanResult(config);
+  const result = await loadScanResult(config, { bypassSessionCache: true });
   const changedFiles = result.manifests.flatMap((manifest) =>
     manifest.gitState.uncommittedChanges.map((file) => ({
       repo: manifest.repoId,
@@ -265,6 +295,7 @@ export async function watch(
   config: OmniLinkConfig,
   options: { once?: boolean } = {},
 ): Promise<DaemonStatus> {
+  invalidateCachedScanResult(config);
   return watchEcosystem(config, options);
 }
 
@@ -276,6 +307,56 @@ export async function owners(config: OmniLinkConfig): Promise<OwnersResult> {
       result.graph.repos.map((manifest) => [manifest.repoId, manifest.owners ?? []]),
     ),
   };
+}
+
+export async function authorityStatus(config: OmniLinkConfig): Promise<AuthorityStatusResult> {
+  const result = await loadScanResult(config);
+  const authority = result.graph.authority ?? loadAuthorityState(config);
+  const bridgeAnalysis = analyzeSwiftTrpcBridge(config, result.graph, authority);
+  const docsProcedures = new Set(authority?.authoritativeApiSurface.procedures ?? []);
+  const backendProcedures = new Set(
+    bridgeAnalysis.backendProcedures.map(
+      (procedure) => `${procedure.router}.${procedure.procedure}`,
+    ),
+  );
+  const iosProcedures = new Set(
+    bridgeAnalysis.iosCalls.map((call) => `${call.router}.${call.procedure}`),
+  );
+  const docsOnly = [...docsProcedures].filter((procedure) => !backendProcedures.has(procedure));
+  const backendOnly = [...backendProcedures].filter((procedure) => !docsProcedures.has(procedure));
+  const obsoleteCalls = [...iosProcedures].filter((procedure) => !backendProcedures.has(procedure));
+  const payloadDrift = uniqueBy(
+    bridgeAnalysis.mismatches.filter((mismatch) =>
+      ['missing-field', 'extra-field', 'type-mismatch'].includes(mismatch.kind),
+    ),
+    (mismatch) => `${mismatch.consumer.file}:${mismatch.consumer.field ?? mismatch.description}`,
+  ).map((mismatch) => mismatch.description);
+  const findings = uniqueBy(
+    [
+      ...(result.graph.findings ?? []).filter((finding) => finding.kind === 'authority_drift'),
+      ...bridgeAnalysis.findings,
+    ],
+    (finding) => `${finding.kind}:${finding.repo}:${finding.file}:${finding.line}:${finding.title}`,
+  );
+
+  const status: AuthorityStatusResult = {
+    authority,
+    findings,
+    blockedApply: findings.some((finding) => finding.kind === 'authority_drift'),
+    procedureCoverage: {
+      docs: docsProcedures.size,
+      backend: backendProcedures.size,
+      iosCalls: iosProcedures.size,
+      bridges: bridgeAnalysis.bridges.length,
+      docsOnly,
+      backendOnly,
+      obsoleteCalls,
+      payloadDrift,
+    },
+    recommendations: [],
+  };
+  status.recommendations = authorityRecommendations(status);
+  return status;
 }
 
 export async function reviewPr(

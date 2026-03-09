@@ -72,9 +72,16 @@ const DEFAULT_EXCLUDES: Record<string, string[]> = {
   'ios-client': [
     'HUSTLEXP-DOCS/',
     'HustleXP/',
+    'src/',
+    '.expo/',
+    'ios/',
+    'android/',
+    'Pods/',
     'node_modules/',
     'docs/',
     'screens/',
+    'reference/',
+    'mock-data/',
     '*.png',
     '*_small.png',
     'temp_screenshot*',
@@ -92,8 +99,18 @@ const DEFAULT_EXCLUDES: Record<string, string[]> = {
     '__mocks__/',
     '_archive/',
     'archive/',
+    'assets/',
+    'docs/',
     'staging/',
     'mock-data/',
+    'private-beta/',
+    'prompts/',
+    'reference/',
+    'screens-spec/',
+    'src/',
+    'tracking/',
+    'ui-puzzle/',
+    'utils/',
     'reference/components/',
   ],
 };
@@ -229,6 +246,14 @@ export function applyHustleXpWorkflowProfile(config: OmniLinkConfig): OmniLinkCo
     },
     runtime: {
       enabled: config.runtime?.enabled ?? false,
+      coverageSummaryPath:
+        config.runtime?.coverageSummaryPath ?? path.join('coverage', 'coverage-summary.json'),
+      testResultsPath:
+        config.runtime?.testResultsPath ?? path.join('artifacts', 'test-results.json'),
+      telemetrySummaryPath:
+        config.runtime?.telemetrySummaryPath ?? path.join('artifacts', 'telemetry-summary.json'),
+      traceSummaryPath:
+        config.runtime?.traceSummaryPath ?? path.join('artifacts', 'trace-summary.json'),
       ...config.runtime,
     },
     policies: {

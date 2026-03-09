@@ -1,5 +1,6 @@
 import {
   apply,
+  authorityStatus,
   evolve,
   health,
   impactFromRefs,
@@ -28,6 +29,7 @@ Commands:
   evolve    Generate evolution suggestions (gaps, bottlenecks, upgrades)
   watch     Build or refresh daemon-backed ecosystem state
   owners    Resolve repo ownership assignments
+  authority-status Report docs authority drift, contract coverage, and reconciliation guidance
   review-pr Generate a PR review artifact with risk and execution planning
   publish-review Publish the saved PR review artifact through the configured provider transport
   apply     Execute the generated automation plan (bounded by policy)
@@ -81,6 +83,7 @@ export interface CliDeps {
   scan: typeof scan;
   watch: typeof watch;
   owners: typeof owners;
+  authorityStatus: typeof authorityStatus;
   publishReview: typeof publishReview;
   impactFromRefs: typeof impactFromRefs;
   impactFromUncommitted: typeof impactFromUncommitted;
@@ -103,6 +106,7 @@ const DEFAULT_DEPS: CliDeps = {
   scan,
   watch,
   owners,
+  authorityStatus,
   publishReview,
   impactFromRefs,
   impactFromUncommitted,
@@ -307,6 +311,13 @@ export async function runCli(
       case 'owners': {
         const config = resolveCliConfig(args.configPath, deps);
         const result = await deps.owners(config);
+        io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'authority-status': {
+        const config = resolveCliConfig(args.configPath, deps);
+        const result = await deps.authorityStatus(config);
         io.stdout(JSON.stringify(result, null, 2));
         return 0;
       }
