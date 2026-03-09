@@ -118,6 +118,23 @@ export type User = z.infer<typeof userSchema>;
     expect(manifest.gitState.recentCommits[0].message).toBe('initial commit');
   });
 
+  it('does not inherit git state from a parent repository', async () => {
+    const nestedDir = path.join(tmpDir, 'nested-repo');
+    fs.mkdirSync(path.join(nestedDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(nestedDir, 'src', 'index.ts'), 'export const value = 1;\n');
+
+    const manifest = await scanRepo({
+      ...config,
+      name: 'nested-repo',
+      path: nestedDir,
+    });
+
+    expect(manifest.gitState.branch).toBe('');
+    expect(manifest.gitState.headSha).toBe('');
+    expect(manifest.gitState.uncommittedChanges).toEqual([]);
+    expect(manifest.gitState.recentCommits).toEqual([]);
+  });
+
   it('detects uncommitted changes', async () => {
     // Modify a file without committing
     fs.writeFileSync(path.join(tmpDir, 'src', 'schemas.ts'), '// modified\n');

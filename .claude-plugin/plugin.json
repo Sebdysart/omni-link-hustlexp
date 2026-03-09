@@ -1,20 +1,21 @@
 {
-  "name": "omni-link",
-  "description": "Multi-repo AI ecosystem plugin — cross-repo grounding, anti-slop enforcement, and proactive business evolution for Claude Code",
+  "name": "omni-link-hustlexp",
+  "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code with docs authority, Swift↔tRPC bridge analysis, and phase-drift gating",
   "version": "1.0.0",
   "author": {
     "name": "Sebastian Dysart"
   },
-  "homepage": "https://github.com/Sebdysart/omni-link",
-  "repository": "https://github.com/Sebdysart/omni-link",
+  "homepage": "https://github.com/Sebdysart/omni-link-hustlexp",
+  "repository": "https://github.com/Sebdysart/omni-link-hustlexp",
   "license": "MIT",
   "keywords": [
     "multi-repo",
     "grounding",
-    "anti-slop",
-    "ecosystem",
+    "authority-gates",
+    "swift",
+    "trpc",
     "cross-repo",
-    "code-quality",
-    "business-intelligence"
+    "phase-drift",
+    "hustlexp"
   ]
 }

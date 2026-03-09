@@ -132,4 +132,89 @@ describe('config', () => {
       expect.arrayContaining(['typescript', 'python', 'go', 'graphql', 'java', 'swift']),
     );
   });
+
+  it('validateConfig accepts workflow profile authority and bridge settings', () => {
+    const result = validateConfig({
+      workflowProfile: 'hustlexp',
+      repos: [
+        {
+          name: 'hustlexp-ios',
+          path: '/tmp/ios',
+          language: 'swift',
+          role: 'ios-client',
+          exclude: ['screenshots/'],
+        },
+        {
+          name: 'hustlexp-backend',
+          path: '/tmp/backend',
+          language: 'typescript',
+          role: 'backend-api',
+        },
+      ],
+      authority: {
+        enabled: true,
+        docsRepo: '/tmp/docs',
+        phaseMode: 'reconciliation',
+        authorityFiles: {
+          currentPhase: 'CURRENT_PHASE.md',
+          finishedState: 'FINISHED_STATE.md',
+          featureFreeze: 'FEATURE_FREEZE.md',
+          aiGuardrails: 'AI_GUARDRAILS.md',
+          apiContract: 'specs/04-backend/API_CONTRACT.md',
+          schema: 'specs/02-architecture/schema.sql',
+        },
+      },
+      bridges: {
+        swiftTrpc: {
+          enabled: true,
+          iosRepo: '/tmp/ios',
+          backendRepo: '/tmp/backend',
+          clientCallPattern: 'trpc',
+          authoritativeBackendRoot: 'backend/src',
+        },
+      },
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('loadConfig applies HustleXP workflow defaults', () => {
+    const configPath = path.join(tmpDir, '.omni-link.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        workflowProfile: 'hustlexp',
+        repos: [
+          { name: 'hustlexp-ios', path: '/tmp/ios', language: 'swift', role: 'ios-client' },
+          {
+            name: 'hustlexp-backend',
+            path: '/tmp/backend',
+            language: 'typescript',
+            role: 'backend-api',
+          },
+          {
+            name: 'hustlexp-docs',
+            path: '/tmp/docs',
+            language: 'javascript',
+            role: 'product-governance',
+          },
+        ],
+      }),
+    );
+
+    const config = loadConfig(configPath);
+
+    expect(config.authority?.enabled).toBe(true);
+    expect(config.authority?.docsRepo).toBe('/tmp/docs');
+    expect(config.bridges?.swiftTrpc?.enabled).toBe(true);
+    expect(config.bridges?.swiftTrpc?.iosRepo).toBe('/tmp/ios');
+    expect(config.daemon?.preferDaemon).toBe(true);
+    expect(config.policies?.requiredChecks).toEqual(
+      expect.arrayContaining(['ios-build', 'backend-tests', 'contract-sync']),
+    );
+    expect(config.repos[0].exclude).toEqual(expect.arrayContaining(['*.png', 'node_modules/']));
+    expect(config.context.focus).toBe('mismatches');
+    expect(config.simulateOnly).toBe(true);
+  });
 });

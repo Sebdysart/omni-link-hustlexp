@@ -1,0 +1,98 @@
+{
+  "workflowProfile": "hustlexp",
+  "simulateOnly": true,
+  "reviewProvider": "github",
+  "repos": [
+    {
+      "name": "hustlexp-ios",
+      "path": "/absolute/path/to/HUSTLEXPFINAL1",
+      "language": "swift",
+      "role": "ios-client"
+    },
+    {
+      "name": "hustlexp-backend",
+      "path": "/absolute/path/to/hustlexp-ai-backend",
+      "language": "typescript",
+      "role": "backend-api"
+    },
+    {
+      "name": "hustlexp-docs",
+      "path": "/absolute/path/to/HUSTLEXP-DOCS",
+      "language": "javascript",
+      "role": "product-governance"
+    }
+  ],
+  "quality": {
+    "blockOnFailure": true,
+    "requireTestsForNewCode": true,
+    "conventionStrictness": "strict"
+  },
+  "context": {
+    "tokenBudget": 8000,
+    "prioritize": "api-surface-first",
+    "includeRecentCommits": 20,
+    "focus": "mismatches"
+  },
+  "cache": {
+    "directory": "/absolute/path/to/.cache/omni-link-hustlexp",
+    "maxAgeDays": 7
+  },
+  "daemon": {
+    "enabled": true,
+    "preferDaemon": true,
+    "statePath": "/absolute/path/to/.cache/omni-link-hustlexp/state.sqlite"
+  },
+  "github": {
+    "enabled": true,
+    "owner": "Sebdysart",
+    "repo": "HUSTLEXPFINAL1",
+    "publishMode": "replay",
+    "artifactPath": ".omni-link/review-artifact.json",
+    "replayDirectory": ".omni-link/provider-replay"
+  },
+  "authority": {
+    "enabled": true,
+    "docsRepo": "/absolute/path/to/HUSTLEXP-DOCS",
+    "phaseMode": "reconciliation",
+    "authorityFiles": {
+      "currentPhase": "CURRENT_PHASE.md",
+      "finishedState": "FINISHED_STATE.md",
+      "featureFreeze": "FEATURE_FREEZE.md",
+      "aiGuardrails": "AI_GUARDRAILS.md",
+      "apiContract": "specs/04-backend/API_CONTRACT.md",
+      "schema": "specs/02-architecture/schema.sql"
+    }
+  },
+  "bridges": {
+    "swiftTrpc": {
+      "enabled": true,
+      "iosRepo": "/absolute/path/to/HUSTLEXPFINAL1",
+      "backendRepo": "/absolute/path/to/hustlexp-ai-backend",
+      "clientCallPattern": "trpc\\\\.call\\\\(router:\\\\s*\"(?<router>[A-Za-z_][A-Za-z0-9_]*)\"\\\\s*,\\\\s*procedure:\\\\s*\"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)\"\\\\s*\\\\)",
+      "authoritativeBackendRoot": "backend/src"
+    }
+  },
+  "runtime": {
+    "enabled": true,
+    "coverageSummaryPath": "/absolute/path/to/hustlexp-ai-backend/coverage/coverage-summary.json",
+    "testResultsPath": "/absolute/path/to/hustlexp-ai-backend/artifacts/test-results.json",
+    "telemetrySummaryPath": "/absolute/path/to/hustlexp-ai-backend/artifacts/telemetry-summary.json",
+    "traceSummaryPath": "/absolute/path/to/hustlexp-ai-backend/artifacts/trace-summary.json"
+  },
+  "policies": {
+    "enabled": true,
+    "protectedBranches": ["main"],
+    "requiredChecks": [
+      "ios-build",
+      "ios-tests",
+      "backend-typecheck",
+      "backend-tests",
+      "docs-authority-check",
+      "contract-sync"
+    ],
+    "requiredOwners": ["product-architecture"],
+    "maxAllowedRisk": "medium",
+    "forbidDirectMainMutation": true,
+    "forbidDestructiveChanges": true
+  }
+}

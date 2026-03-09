@@ -56,6 +56,8 @@ export function pruneToTokenBudget(
     sharedTypes: [...graph.sharedTypes],
     contractMismatches: [...graph.contractMismatches],
     impactPaths: [...graph.impactPaths],
+    authority: graph.authority,
+    findings: [...(graph.findings ?? [])],
   };
 
   // If graph is empty, return immediately
@@ -195,6 +197,7 @@ export function pruneToTokenBudget(
   }
 
   // Contract mismatches (priority 100) — never trimmed
+  // Authority/finding metadata is preserved for policy visibility.
 
   // Recalculate final token count accurately
   totalTokens = computeTotalTokens(pruned);
@@ -249,6 +252,24 @@ function serializeMismatch(mismatch: Mismatch): string {
 
 function computeTotalTokens(graph: EcosystemGraph): number {
   let total = 0;
+
+  if (graph.authority) {
+    total += estimateTokens(
+      [
+        graph.authority.currentPhase,
+        graph.authority.blockedWorkClasses.join(','),
+        graph.authority.frozenFeatures.join(','),
+        graph.authority.authoritativeApiSurface.procedures.join(','),
+        graph.authority.authoritativeSchemaSurface.tables.join(','),
+      ].join(' '),
+    );
+  }
+
+  for (const finding of graph.findings ?? []) {
+    total += estimateTokens(
+      `${finding.kind} ${finding.severity} ${finding.title} ${finding.description}`,
+    );
+  }
 
   // Mismatches
   for (const m of graph.contractMismatches) {

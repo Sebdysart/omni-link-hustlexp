@@ -48,6 +48,16 @@ export const repoConfigSchema = z.object({
   path: z.string().min(1),
   language: repoLanguageSchema,
   role: z.string().min(1),
+  exclude: z.array(z.string().min(1)).optional(),
+});
+
+const authorityFileSchema = z.object({
+  currentPhase: z.string().min(1),
+  finishedState: z.string().min(1),
+  featureFreeze: z.string().min(1),
+  aiGuardrails: z.string().min(1),
+  apiContract: z.string().min(1),
+  schema: z.string().min(1),
 });
 
 const ownershipRuleSchema = z.object({
@@ -124,6 +134,30 @@ const DEFAULT_AUTOMATION = {
   dryRunByDefault: true,
 };
 
+const DEFAULT_AUTHORITY_FILES = {
+  currentPhase: 'CURRENT_PHASE.md',
+  finishedState: 'FINISHED_STATE.md',
+  featureFreeze: 'FEATURE_FREEZE.md',
+  aiGuardrails: 'AI_GUARDRAILS.md',
+  apiContract: 'specs/04-backend/API_CONTRACT.md',
+  schema: 'specs/02-architecture/schema.sql',
+};
+
+const DEFAULT_AUTHORITY = {
+  enabled: false,
+  phaseMode: 'reconciliation' as const,
+  authorityFiles: DEFAULT_AUTHORITY_FILES,
+};
+
+const DEFAULT_BRIDGES = {
+  swiftTrpc: {
+    enabled: false,
+    clientCallPattern:
+      'trpc\\\\.call\\\\(router:\\\\s*"(?<router>[A-Za-z_][A-Za-z0-9_]*)"\\\\s*,\\\\s*procedure:\\\\s*"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)"\\\\s*\\\\)',
+    authoritativeBackendRoot: 'backend/src',
+  },
+};
+
 const DEFAULT_OWNERSHIP = {
   enabled: false,
   defaultOwner: 'unassigned',
@@ -173,6 +207,7 @@ const DEFAULT_MAX_TIER = {
 
 export const omniLinkConfigSchema = z.object({
   repos: z.array(repoConfigSchema).min(1).max(10),
+  workflowProfile: z.literal('hustlexp').optional(),
   reviewProvider: z.enum(['github', 'gitlab']).default('github'),
   evolution: z
     .object({
@@ -245,6 +280,30 @@ export const omniLinkConfigSchema = z.object({
       publishMode: z.enum(['dry-run', 'replay', 'gitlab']).default(DEFAULT_GITLAB.publishMode),
       replayDirectory: z.string().min(1).default(DEFAULT_GITLAB.replayDirectory),
       apiUrl: z.string().url().default(DEFAULT_GITLAB.apiUrl),
+    })
+    .optional(),
+  authority: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_AUTHORITY.enabled),
+      docsRepo: z.string().min(1).optional(),
+      phaseMode: z.enum(['reconciliation', 'strict']).default(DEFAULT_AUTHORITY.phaseMode),
+      authorityFiles: authorityFileSchema.default(DEFAULT_AUTHORITY.authorityFiles),
+    })
+    .optional(),
+  bridges: z
+    .object({
+      swiftTrpc: z
+        .object({
+          enabled: z.boolean().default(DEFAULT_BRIDGES.swiftTrpc.enabled),
+          iosRepo: z.string().min(1).optional(),
+          backendRepo: z.string().min(1).optional(),
+          clientCallPattern: z.string().min(1).default(DEFAULT_BRIDGES.swiftTrpc.clientCallPattern),
+          authoritativeBackendRoot: z
+            .string()
+            .min(1)
+            .default(DEFAULT_BRIDGES.swiftTrpc.authoritativeBackendRoot),
+        })
+        .default(DEFAULT_BRIDGES.swiftTrpc),
     })
     .optional(),
   automation: z

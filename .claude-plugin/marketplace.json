@@ -1,9 +1,9 @@
 {
-  "name": "omni-link",
-  "description": "Multi-repo AI ecosystem plugin for Claude Code",
+  "name": "omni-link-hustlexp",
+  "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code",
   "plugins": [
     {
-      "name": "omni-link",
+      "name": "omni-link-hustlexp",
       "version": "1.0.0",
       "source": "./"
     }

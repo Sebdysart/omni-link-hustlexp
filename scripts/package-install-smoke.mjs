@@ -34,6 +34,8 @@ export async function runPackageInstallSmoke(options = {}) {
   const cwd = options.cwd ?? process.cwd();
   const scratchRoot = options.scratchRoot ?? path.join(cwd, '.tmp');
   const logger = options.logger ?? console.log;
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+  const packageName = rootPackage.name ?? 'omni-link';
 
   fs.mkdirSync(scratchRoot, { recursive: true });
   const root = fs.mkdtempSync(path.join(scratchRoot, 'omni-link-package-'));
@@ -63,9 +65,12 @@ export async function runPackageInstallSmoke(options = {}) {
 
     run('npm', ['install', tarballPath], installRoot);
 
-    const installedPackageRoot = path.join(installRoot, 'node_modules', 'omni-link');
+    const installedPackageRoot = path.join(installRoot, 'node_modules', packageName);
     const installedCliPath = path.join(installedPackageRoot, 'dist', 'cli.js');
-    assert(fs.existsSync(installedPackageRoot), 'expected omni-link to install into node_modules');
+    assert(
+      fs.existsSync(installedPackageRoot),
+      `expected ${packageName} to install into node_modules`,
+    );
     assert(fs.existsSync(installedCliPath), 'expected installed dist/cli.js to exist');
 
     const installedPkg = JSON.parse(

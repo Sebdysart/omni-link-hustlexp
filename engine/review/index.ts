@@ -45,9 +45,13 @@ export function scoreRisk(graph: EcosystemGraph): RiskReport {
   const severityScore =
     graph.contractMismatches.reduce((total, mismatch) => total + (mismatch.riskScore ?? 0), 0) +
     graph.impactPaths.reduce((total, impactPath) => total + (impactPath.riskScore ?? 0), 0) +
-    graph.bridges.reduce((total, bridge) => total + (bridge.riskScore ?? 0), 0);
+    graph.bridges.reduce((total, bridge) => total + (bridge.riskScore ?? 0), 0) +
+    (graph.findings ?? []).reduce((total, finding) => total + (finding.riskScore ?? 0), 0);
   const itemCount =
-    graph.contractMismatches.length + graph.impactPaths.length + graph.bridges.length || 1;
+    graph.contractMismatches.length +
+      graph.impactPaths.length +
+      graph.bridges.length +
+      (graph.findings?.length ?? 0) || 1;
   const average = Math.round(severityScore / itemCount);
 
   if (graph.contractMismatches.some((mismatch) => mismatch.severity === 'breaking')) {
@@ -58,6 +62,9 @@ export function scoreRisk(graph: EcosystemGraph): RiskReport {
   }
   if (graph.repos.some((repo) => (repo.runtimeSignals ?? []).length > 0)) {
     reasons.push('runtime-weighted signals increased priority');
+  }
+  if ((graph.findings ?? []).some((finding) => finding.kind === 'authority_drift')) {
+    reasons.push('authority drift detected');
   }
 
   return {
@@ -88,18 +95,21 @@ export function createReviewArtifact(
     baseRef,
     headRef,
     affectedRepos: [
-      ...new Set(
-        graph.impactPaths.flatMap((impactPath) => [
+      ...new Set([
+        ...graph.impactPaths.flatMap((impactPath) => [
           impactPath.trigger.repo,
           ...impactPath.affected.map((affected) => affected.repo),
         ]),
-      ),
+        ...(graph.findings ?? []).map((finding) => finding.repo),
+      ]),
     ],
     impact: graph.impactPaths,
     contractMismatches: graph.contractMismatches,
+    findings: graph.findings ?? [],
     owners,
     risk,
     policyDecisions: [],
+    authority: graph.authority,
   };
 }
 

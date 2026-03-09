@@ -149,6 +149,7 @@ export function createExecutionPlan(
       destructive: changes.some(
         (change) => change.kind === 'provider-migration' && change.risk === 'high',
       ),
+      authorityDrift: (graph.findings ?? []).some((finding) => finding.kind === 'authority_drift'),
     },
   );
   const blocked = policiesBlock(policyDecisions);

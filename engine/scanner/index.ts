@@ -125,7 +125,8 @@ export async function scanRepo(
   // ── Manifest cache check ─────────────────────────────────────────────────
   // Only use the cached manifest when the working tree is clean — if there
   // are uncommitted or untracked changes the cached snapshot is stale.
-  if (manifestCache) {
+  const gitRoot = await resolveOwnedGitRoot(repoPath);
+  if (manifestCache && gitRoot) {
     const headSha = await gitExec(repoPath, ['rev-parse', 'HEAD']);
     const branchName =
       (await gitExec(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])) || 'detached';
@@ -143,7 +144,7 @@ export async function scanRepo(
   // ─────────────────────────────────────────────────────────────────────────
 
   // 1. Walk and collect supported files
-  const filePaths = await walkDirectory(repoPath);
+  const filePaths = await walkDirectory(repoPath, config.exclude ?? []);
   const semanticSelection = await analyzeRepoSemantics(config, filePaths, scanOptions?.config);
 
   // 2. Parse each file and extract everything
@@ -353,7 +354,7 @@ export async function scanRepo(
   }
 
   // 3. Extract git state
-  const gitState = await extractGitState(repoPath);
+  const gitState = await extractGitState(repoPath, gitRoot);
 
   // 4. Detect conventions
   const conventions = detectConventions(fileInfos, language, sourceSnippets);
@@ -445,11 +446,11 @@ export async function scanRepo(
  * Recursively walk a directory, returning all file paths.
  * Skips SKIP_DIRS at any level.
  */
-async function walkDirectory(dir: string): Promise<string[]> {
+async function walkDirectory(dir: string, extraIgnorePatterns: string[] = []): Promise<string[]> {
   const results: string[] = [];
   const stack: string[] = [dir];
   const rootDir = dir;
-  const ignoreResolver = createGitignoreResolver(rootDir);
+  const ignoreResolver = createGitignoreResolver(rootDir, extraIgnorePatterns);
 
   while (stack.length > 0) {
     const current = stack.pop()!;
@@ -488,7 +489,19 @@ async function walkDirectory(dir: string): Promise<string[]> {
 
 // ─── Git State Extraction ────────────────────────────────────────────────────
 
-async function extractGitState(repoPath: string): Promise<RepoManifest['gitState']> {
+async function extractGitState(
+  repoPath: string,
+  ownedGitRoot?: string | null,
+): Promise<RepoManifest['gitState']> {
+  if (!ownedGitRoot) {
+    return {
+      branch: '',
+      headSha: '',
+      uncommittedChanges: [],
+      recentCommits: [],
+    };
+  }
+
   const [branch, headSha, diffOutput, stagedOutput, untrackedOutput, logOutput] = await Promise.all(
     [
       gitExec(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']),
@@ -534,6 +547,23 @@ async function extractGitState(repoPath: string): Promise<RepoManifest['gitState
     uncommittedChanges: [...changedFiles],
     recentCommits,
   };
+}
+
+async function resolveOwnedGitRoot(repoPath: string): Promise<string | null> {
+  const gitRoot = await gitExec(repoPath, ['rev-parse', '--show-toplevel']);
+  if (!gitRoot) {
+    return null;
+  }
+
+  try {
+    const [resolvedRepoPath, resolvedGitRoot] = await Promise.all([
+      fs.promises.realpath(repoPath),
+      fs.promises.realpath(gitRoot),
+    ]);
+    return resolvedRepoPath === resolvedGitRoot ? resolvedGitRoot : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

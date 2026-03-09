@@ -6,6 +6,7 @@ export type SourceKind = 'parser' | 'semantic' | 'runtime' | 'mixed';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 export type ReviewProviderId = 'github' | 'gitlab';
 export type ReviewPublishMode = 'dry-run' | 'replay' | 'github' | 'gitlab';
+export type WorkflowProfile = 'hustlexp';
 
 export interface ProvenanceEntry {
   sourceKind: SourceKind;
@@ -30,6 +31,35 @@ export interface RepoConfig {
   path: string;
   language: string;
   role: string;
+  exclude?: string[];
+}
+
+export interface AuthorityFileMap {
+  currentPhase: string;
+  finishedState: string;
+  featureFreeze: string;
+  aiGuardrails: string;
+  apiContract: string;
+  schema: string;
+}
+
+export interface AuthorityConfig {
+  enabled?: boolean;
+  docsRepo?: string;
+  phaseMode?: 'reconciliation' | 'strict';
+  authorityFiles?: AuthorityFileMap;
+}
+
+export interface SwiftTrpcBridgeConfig {
+  enabled?: boolean;
+  iosRepo?: string;
+  backendRepo?: string;
+  clientCallPattern?: string;
+  authoritativeBackendRoot?: string;
+}
+
+export interface BridgesConfig {
+  swiftTrpc?: SwiftTrpcBridgeConfig;
 }
 
 export interface OwnershipRule {
@@ -129,6 +159,7 @@ export interface MaxTierConfig {
 
 export interface OmniLinkConfig {
   repos: RepoConfig[];
+  workflowProfile?: WorkflowProfile;
   reviewProvider?: ReviewProviderId;
   evolution: {
     aggressiveness: 'aggressive' | 'moderate' | 'on-demand';
@@ -153,6 +184,8 @@ export interface OmniLinkConfig {
   daemon?: DaemonConfig;
   github?: GitHubConfig;
   gitlab?: GitLabConfig;
+  authority?: AuthorityConfig;
+  bridges?: BridgesConfig;
   automation?: AutomationConfig;
   ownership?: OwnershipConfig;
   runtime?: RuntimeConfig;
@@ -328,7 +361,14 @@ export interface TypeLineage extends AnalysisMetadata {
 }
 
 export interface Mismatch extends AnalysisMetadata {
-  kind: 'missing-field' | 'type-mismatch' | 'extra-field' | 'renamed-field';
+  kind:
+    | 'missing-field'
+    | 'type-mismatch'
+    | 'extra-field'
+    | 'renamed-field'
+    | 'missing-procedure'
+    | 'obsolete-call'
+    | 'authority-drift';
   description: string;
   provider: { repo: string; file: string; line: number; field: string };
   consumer: { repo: string; file: string; line: number; field?: string };
@@ -346,6 +386,39 @@ export interface ImpactPath extends AnalysisMetadata {
   }>;
 }
 
+export interface AuthoritativeApiSurface extends AnalysisMetadata {
+  sourceFile: string;
+  procedures: string[];
+  errorCodes: string[];
+  baseUrls: string[];
+}
+
+export interface AuthoritativeSchemaSurface extends AnalysisMetadata {
+  sourceFile: string;
+  tables: string[];
+  views: string[];
+}
+
+export interface AuthorityState extends AnalysisMetadata {
+  docsRepo: string;
+  phaseMode: 'reconciliation' | 'strict';
+  currentPhase: string;
+  blockedWorkClasses: string[];
+  frozenFeatures: string[];
+  authoritativeApiSurface: AuthoritativeApiSurface;
+  authoritativeSchemaSurface: AuthoritativeSchemaSurface;
+}
+
+export interface ReviewFinding extends AnalysisMetadata {
+  kind: 'authority_drift' | 'bridge_mismatch' | 'bridge_obsolete_call';
+  severity: 'breaking' | 'warning' | 'info';
+  title: string;
+  description: string;
+  repo: string;
+  file: string;
+  line: number;
+}
+
 export interface EcosystemGraph extends AnalysisMetadata {
   repos: RepoManifest[];
   bridges: ApiBridge[];
@@ -355,6 +428,8 @@ export interface EcosystemGraph extends AnalysisMetadata {
   semanticReferences?: SymbolReference[];
   owners?: OwnerAssignment[];
   runtimeSignals?: RuntimeSignal[];
+  authority?: AuthorityState;
+  findings?: ReviewFinding[];
 }
 
 // --- Context Output ---
@@ -380,6 +455,13 @@ export interface EcosystemDigest {
   apiSurfaceSummary: string;
   recentChangesSummary: string;
   architectureDiagram?: string;
+  authorityStatus?: {
+    currentPhase: string;
+    phaseMode: 'reconciliation' | 'strict';
+    blockedWorkClasses: string[];
+    findingCount: number;
+  };
+  reviewFindingSummary?: Record<string, number>;
   tokenCount: number;
 }
 
@@ -464,9 +546,11 @@ export interface ReviewArtifact {
   affectedRepos: string[];
   impact: ImpactPath[];
   contractMismatches: Mismatch[];
+  findings: ReviewFinding[];
   owners: OwnerAssignment[];
   risk: RiskReport;
   policyDecisions: PolicyDecision[];
+  authority?: AuthorityState;
   executionPlan?: ExecutionPlan;
 }
 

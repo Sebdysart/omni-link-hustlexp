@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .tmp/
+.omni-link/
 cache/repos/
 cache/graph.json
 cache/digest.json

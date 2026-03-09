@@ -51,6 +51,22 @@ export function formatDigest(
   const conventionSummary = buildConventionSummary(graph.repos);
   const apiSurfaceSummary = buildApiSurfaceSummary(graph);
   const architectureDiagram = generateArchitectureDiagram(graph);
+  const authorityStatus = graph.authority
+    ? {
+        currentPhase: graph.authority.currentPhase,
+        phaseMode: graph.authority.phaseMode,
+        blockedWorkClasses: graph.authority.blockedWorkClasses,
+        findingCount:
+          graph.findings?.filter((finding) => finding.kind === 'authority_drift').length ?? 0,
+      }
+    : undefined;
+  const reviewFindingSummary =
+    (graph.findings ?? []).length > 0
+      ? (graph.findings ?? []).reduce<Record<string, number>>((accumulator, finding) => {
+          accumulator[finding.kind] = (accumulator[finding.kind] ?? 0) + 1;
+          return accumulator;
+        }, {})
+      : undefined;
   // Use originalRepos (pre-pruning) for commit history so the token pruner
   // stripping commits from the graph doesn't produce a "0 recent commits" summary.
   const recentChangesSummary = buildRecentChangesSummary(originalRepos ?? graph.repos);
@@ -101,6 +117,11 @@ export function formatDigest(
       );
       sections.push(`Recent: ${recentChangesSummary}`);
       sections.push(`Evolution: ${displayedEvolution.length} suggestion(s)`);
+      if (authorityStatus) {
+        sections.push(
+          `Authority: ${authorityStatus.currentPhase} (${authorityStatus.phaseMode}), ${authorityStatus.findingCount} drift finding(s)`,
+        );
+      }
       if (contractStatus.mismatches.length > 0) {
         sections.push('');
         sections.push('## Mismatches');
@@ -128,6 +149,25 @@ export function formatDigest(
     if (includeArchitectureDiagram) {
       sections.push('## Architecture');
       sections.push(architectureDiagram);
+      sections.push('');
+    }
+
+    if (authorityStatus) {
+      sections.push('## Authority');
+      sections.push(
+        `Current phase: ${authorityStatus.currentPhase} (${authorityStatus.phaseMode})`,
+      );
+      if (authorityStatus.blockedWorkClasses.length > 0) {
+        sections.push(`Blocked work: ${authorityStatus.blockedWorkClasses.join(', ')}`);
+      }
+      if ((graph.findings ?? []).length > 0) {
+        sections.push(
+          `Findings: ${(graph.findings ?? [])
+            .map((finding) => `[${finding.severity.toUpperCase()}] ${finding.title}`)
+            .slice(0, 5)
+            .join('; ')}`,
+        );
+      }
       sections.push('');
     }
 
@@ -273,6 +313,8 @@ export function formatDigest(
     apiSurfaceSummary,
     recentChangesSummary,
     architectureDiagram: includeArchitectureDiagram ? architectureDiagram : undefined,
+    authorityStatus,
+    reviewFindingSummary,
     tokenCount,
   };
 

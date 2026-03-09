@@ -24,7 +24,7 @@ export function evaluatePolicies(
   targetBranch: string,
   risk: RiskReport,
   owners: OwnerAssignment[],
-  options: { destructive?: boolean } = {},
+  options: { destructive?: boolean; authorityDrift?: boolean } = {},
 ): PolicyDecision[] {
   const policies = config.policies;
   if (!policies?.enabled) {
@@ -70,6 +70,14 @@ export function evaluatePolicies(
       policyId: 'destructive-change',
       status: 'blocked',
       message: 'Destructive changes are disabled by policy.',
+    });
+  }
+
+  if (options.authorityDrift) {
+    decisions.push({
+      policyId: 'authority-drift',
+      status: 'blocked',
+      message: 'Authority drift must be reconciled before execution or strict review can proceed.',
     });
   }
 

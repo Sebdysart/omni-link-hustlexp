@@ -4,8 +4,10 @@ import * as path from 'node:path';
 
 import type { OmniLinkConfig } from './types.js';
 import { parseConfig, safeParseConfig } from './config-validator.js';
+import { applyHustleXpWorkflowProfile } from './workflows/hustlexp.js';
 
 export const DEFAULT_CONFIG: Omit<OmniLinkConfig, 'repos'> = {
+  workflowProfile: undefined,
   reviewProvider: 'github',
   evolution: {
     aggressiveness: 'aggressive',
@@ -53,6 +55,27 @@ export const DEFAULT_CONFIG: Omit<OmniLinkConfig, 'repos'> = {
     publishMode: 'dry-run',
     replayDirectory: path.join('.omni-link', 'provider-replay'),
     apiUrl: 'https://gitlab.com/api/v4',
+  },
+  authority: {
+    enabled: false,
+    docsRepo: undefined,
+    phaseMode: 'reconciliation',
+    authorityFiles: {
+      currentPhase: 'CURRENT_PHASE.md',
+      finishedState: 'FINISHED_STATE.md',
+      featureFreeze: 'FEATURE_FREEZE.md',
+      aiGuardrails: 'AI_GUARDRAILS.md',
+      apiContract: path.join('specs', '04-backend', 'API_CONTRACT.md'),
+      schema: path.join('specs', '02-architecture', 'schema.sql'),
+    },
+  },
+  bridges: {
+    swiftTrpc: {
+      enabled: false,
+      clientCallPattern:
+        'trpc\\\\.call\\\\(router:\\\\s*"(?<router>[A-Za-z_][A-Za-z0-9_]*)"\\\\s*,\\\\s*procedure:\\\\s*"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)"\\\\s*\\\\)',
+      authoritativeBackendRoot: path.join('backend', 'src'),
+    },
   },
   automation: {
     enabled: false,
@@ -132,8 +155,9 @@ export function validateConfig(raw: Record<string, unknown>): { valid: boolean; 
 
 export function loadConfig(configPath: string): OmniLinkConfig {
   const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  const merged = {
+  const merged: OmniLinkConfig = {
     ...raw,
+    workflowProfile: raw.workflowProfile ?? DEFAULT_CONFIG.workflowProfile,
     reviewProvider: raw.reviewProvider ?? DEFAULT_CONFIG.reviewProvider,
     evolution: { ...DEFAULT_CONFIG.evolution, ...raw.evolution },
     quality: { ...DEFAULT_CONFIG.quality, ...raw.quality },
@@ -142,6 +166,26 @@ export function loadConfig(configPath: string): OmniLinkConfig {
     daemon: raw.daemon ? { ...DEFAULT_CONFIG.daemon, ...raw.daemon } : raw.daemon,
     github: raw.github ? { ...DEFAULT_CONFIG.github, ...raw.github } : raw.github,
     gitlab: raw.gitlab ? { ...DEFAULT_CONFIG.gitlab, ...raw.gitlab } : raw.gitlab,
+    authority: raw.authority
+      ? {
+          ...DEFAULT_CONFIG.authority,
+          ...raw.authority,
+          authorityFiles: {
+            ...DEFAULT_CONFIG.authority?.authorityFiles,
+            ...raw.authority.authorityFiles,
+          },
+        }
+      : raw.authority,
+    bridges: raw.bridges
+      ? {
+          ...DEFAULT_CONFIG.bridges,
+          ...raw.bridges,
+          swiftTrpc: {
+            ...DEFAULT_CONFIG.bridges?.swiftTrpc,
+            ...raw.bridges.swiftTrpc,
+          },
+        }
+      : raw.bridges,
     automation: raw.automation
       ? { ...DEFAULT_CONFIG.automation, ...raw.automation }
       : raw.automation,
@@ -168,5 +212,5 @@ export function loadConfig(configPath: string): OmniLinkConfig {
       : raw.maxTier,
   };
 
-  return parseConfig(merged);
+  return parseConfig(applyHustleXpWorkflowProfile(merged));
 }

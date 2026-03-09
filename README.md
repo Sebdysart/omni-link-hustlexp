@@ -1,6 +1,6 @@
-# omni-link
+# omni-link-hustlexp
 
-**Local-first multi-repo engineering control plane for Claude Code** -- semantic cross-repo analysis, PR/MR intelligence, bounded automation, policy enforcement, and ecosystem-level evolution.
+**HustleXP-tailored multi-repo engineering control plane for Claude Code** -- docs authority ingestion, Swift↔tRPC bridge analysis, phase-drift gating, bounded automation, and branch-aware review workflows across the HustleXP iOS, backend, and docs repos.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
@@ -9,14 +9,23 @@
 
 ## What it does
 
-omni-link scans up to 10 repositories, builds a branch-aware ecosystem graph of APIs, types, dependencies, ownership, runtime signals, and policy state, then uses that graph to drive scans, impact analysis, health scoring, PR/MR review artifacts, provider publishing, and bounded execution planning.
+This fork starts from upstream `omni-link` and narrows it around one operating model:
 
-This is not just a repo scanner. In max-tier mode, omni-link behaves like a local-first ecosystem control plane:
+- `HUSTLEXPFINAL1` as the Swift/iOS consumer
+- `hustlexp-ai-backend` as the tRPC/API provider
+- `HUSTLEXP-DOCS` as the authority/governance repo
+
+It still preserves the upstream command surface, but the `hustlexp` workflow profile adds project-specific truth sources that upstream generic scanning cannot infer reliably.
+
+In max-tier HustleXP mode, the fork behaves like a local-first control plane for this exact topology:
 
 - It keeps warm state in a SQLite-backed daemon instead of rescanning everything on every command.
+- It treats the docs repo as an authority source instead of just another Markdown tree.
+- It extracts Swift client `trpc.call(router: ..., procedure: ...)` usage and correlates it with backend procedures under `backend/src`.
+- It detects phase drift between docs, backend, and iOS code before execution is allowed.
 - It combines parser coverage with compiler-backed semantic analysis for TypeScript, Go, Python, Java, and Swift, plus AST-backed GraphQL analysis.
 - It generates branch-aware review artifacts with risk, owners, policy decisions, and rollback-aware execution plans.
-- It publishes or replays provider-native review output for GitHub and GitLab with live metadata negotiation and idempotent comment updates.
+- It publishes or replays provider-native review output for GitHub with live metadata negotiation and idempotent comment updates.
 - It keeps automation bounded: branch and PR oriented, policy gated, and auditable.
 
 ## Why it is different
@@ -29,6 +38,10 @@ This is not just a repo scanner. In max-tier mode, omni-link behaves like a loca
 
 ## Features
 
+- **HustleXP workflow profile** -- one config flag turns on authority ingestion, Swift↔tRPC bridge analysis, path exclusions, ownership defaults, policy defaults, and daemon defaults for the three-repo HustleXP workspace.
+- **Docs authority layer** -- parses `CURRENT_PHASE.md`, `FINISHED_STATE.md`, `FEATURE_FREEZE.md`, `AI_GUARDRAILS.md`, `API_CONTRACT.md`, and `schema.sql` into first-class authority state.
+- **Swift↔tRPC bridge** -- correlates Swift client calls, backend procedures, and docs authority so stale calls, missing procedures, and undocumented endpoints are surfaced explicitly.
+- **Authority drift findings** -- reconciliation mode allows scan/review while blocking `apply`; strict mode turns unresolved authority drift into a hard policy gate.
 - **Hybrid truth layer** -- Tree-sitter fallback plus compiler-backed TypeScript, Go, Python, Java, and Swift analyzers, plus GraphQL AST analysis with provenance and confidence.
 - **Branch-aware daemon state** -- SQLite-backed warm graph snapshots keyed by config and branch/worktree signature.
 - **Cross-repo API and type graphing** -- Routes, procedures, contracts, imports, symbol references, type lineage, dependency edges, and impact paths.
@@ -42,9 +55,33 @@ This is not just a repo scanner. In max-tier mode, omni-link behaves like a loca
 - **Packaged artifact validation** -- the built tarball is installed into a temp project and exercised from `node_modules`.
 - **Polyglot stress coverage** -- the comprehensive stress harness exercises TypeScript, Go, Python, GraphQL, Java, and Swift together.
 
+## HustleXP workflow
+
+The tailored fork is opinionated on purpose.
+
+- The docs repo is treated as the authority layer.
+- The backend repo is treated as the provider surface rooted at `backend/src`.
+- The iOS repo is treated as the consumer surface.
+- Default excludes suppress noisy nested copies, screenshots, archives, mocks, and legacy trees.
+- Default automation posture is dry-run first, with `apply` blocked while authority drift is unresolved.
+
+The result is a review surface that answers the questions the generic scanner could not answer well enough for HustleXP:
+
+- Does iOS call a backend procedure that no longer exists?
+- Does the backend expose a procedure that the docs never declared?
+- Do the docs still claim bootstrap while the product is clearly beyond bootstrap?
+- Is a proposed change blocked because the authority layer has not been reconciled yet?
+
 ## Verification
 
 The current repository state is validated by `npm run verify:stress`, which includes lint, typecheck, unit/integration tests, coverage, build, CLI smoke, max-tier smoke, contract fixtures, package-install smoke, full stress, and live-provider gates when credentials are configured.
+
+The tailored fork also adds `npm run verify:hustlexp`, which explicitly reruns the HustleXP-specific bars:
+
+- docs-authority parsing
+- Swift↔tRPC bridge extraction and mismatch detection
+- phase-drift enforcement
+- HustleXP fixture integration from `scan` through blocked `apply`
 
 Current proof points from the verified state:
 
@@ -60,44 +97,49 @@ Current proof points from the verified state:
 ### From the marketplace
 
 ```bash
-claude plugin install omni-link
+claude plugin install omni-link-hustlexp
 ```
 
 ### Manual installation
 
 ```bash
-git clone https://github.com/Sebdysart/omni-link.git
-cd omni-link
+git clone https://github.com/Sebdysart/omni-link-hustlexp.git
+cd omni-link-hustlexp
 npm install
 npm run build
 ```
 
 ## Configuration
 
-Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` for global config:
+For the tailored fork, start from [config/hustlexp.local.example.json](/Users/sebastiandysart/omni-link-hustlexp/config/hustlexp.local.example.json) and keep the absolute paths machine-local. The important part is the `workflowProfile: "hustlexp"` switch, because that activates the authority layer, Swift↔tRPC bridge, default exclusions, ownership defaults, and safer automation posture.
+
+Create a `.omni-link.json` in your project root or `~/.claude/omni-link-hustlexp.json` for global config:
 
 ```json
 {
+  "workflowProfile": "hustlexp",
+  "simulateOnly": true,
   "reviewProvider": "github",
   "repos": [
     {
-      "name": "my-backend",
-      "path": "/path/to/backend",
-      "language": "typescript",
-      "role": "backend"
+      "name": "hustlexp-ios",
+      "path": "/absolute/path/to/HUSTLEXPFINAL1",
+      "language": "swift",
+      "role": "ios-client"
     },
     {
-      "name": "my-ios-app",
-      "path": "/path/to/ios",
-      "language": "swift",
-      "role": "ios"
+      "name": "hustlexp-backend",
+      "path": "/absolute/path/to/hustlexp-ai-backend",
+      "language": "typescript",
+      "role": "backend-api"
+    },
+    {
+      "name": "hustlexp-docs",
+      "path": "/absolute/path/to/HUSTLEXP-DOCS",
+      "language": "javascript",
+      "role": "product-governance"
     }
   ],
-  "evolution": {
-    "aggressiveness": "aggressive",
-    "maxSuggestionsPerSession": 5,
-    "categories": ["feature", "performance", "monetization", "scale", "security"]
-  },
   "quality": {
     "blockOnFailure": true,
     "requireTestsForNewCode": true,
@@ -109,88 +151,94 @@ Create a `.omni-link.json` in your project root or `~/.claude/omni-link.json` fo
     "includeRecentCommits": 20
   },
   "cache": {
-    "directory": "~/.claude/omni-link-cache",
+    "directory": "/absolute/path/to/.cache/omni-link-hustlexp",
     "maxAgeDays": 7
   },
   "daemon": {
     "enabled": true,
     "preferDaemon": true,
-    "statePath": "~/.claude/omni-link-daemon-state.sqlite"
+    "statePath": "/absolute/path/to/.cache/omni-link-hustlexp/state.sqlite"
   },
-  "github": {
+  "authority": {
     "enabled": true,
-    "owner": "acme",
-    "repo": "platform",
-    "artifactPath": ".omni-link/review-artifact.json",
-    "publishMode": "replay",
-    "replayDirectory": ".omni-link/provider-replay"
+    "docsRepo": "/absolute/path/to/HUSTLEXP-DOCS",
+    "phaseMode": "reconciliation",
+    "authorityFiles": {
+      "currentPhase": "CURRENT_PHASE.md",
+      "finishedState": "FINISHED_STATE.md",
+      "featureFreeze": "FEATURE_FREEZE.md",
+      "aiGuardrails": "AI_GUARDRAILS.md",
+      "apiContract": "specs/04-backend/API_CONTRACT.md",
+      "schema": "specs/02-architecture/schema.sql"
+    }
   },
-  "gitlab": {
-    "enabled": true,
-    "namespace": "acme",
-    "project": "platform",
-    "artifactPath": ".omni-link/review-artifact.gitlab.json",
-    "publishMode": "replay",
-    "replayDirectory": ".omni-link/provider-replay"
+  "bridges": {
+    "swiftTrpc": {
+      "enabled": true,
+      "iosRepo": "/absolute/path/to/HUSTLEXPFINAL1",
+      "backendRepo": "/absolute/path/to/hustlexp-ai-backend",
+      "clientCallPattern": "trpc\\\\.call\\\\(router:\\\\s*\"(?<router>[A-Za-z_][A-Za-z0-9_]*)\"\\\\s*,\\\\s*procedure:\\\\s*\"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)\"\\\\s*\\\\)",
+      "authoritativeBackendRoot": "backend/src"
+    }
   },
   "ownership": {
     "enabled": true,
-    "defaultOwner": "platform-team",
-    "rules": [{ "owner": "backend-team", "kind": "team", "scope": "repo", "repo": "my-backend" }]
+    "defaultOwner": "platform"
   },
   "runtime": {
     "enabled": true,
-    "coverageSummaryPath": "coverage/coverage-summary.json",
-    "testResultsPath": "test-results.json"
+    "coverageSummaryPath": "/absolute/path/to/hustlexp-ai-backend/coverage/coverage-summary.json",
+    "testResultsPath": "/absolute/path/to/hustlexp-ai-backend/artifacts/test-results.json"
   },
   "policies": {
     "enabled": true,
     "protectedBranches": ["main"],
-    "maxAllowedRisk": "high",
-    "forbidDirectMainMutation": true
-  },
-  "maxTier": {
-    "enabled": true,
-    "semanticAnalysis": {
-      "enabled": true,
-      "preferSemantic": true
-    }
+    "requiredChecks": [
+      "ios-build",
+      "ios-tests",
+      "backend-typecheck",
+      "backend-tests",
+      "docs-authority-check",
+      "contract-sync"
+    ],
+    "maxAllowedRisk": "medium",
+    "forbidDirectMainMutation": true,
+    "forbidDestructiveChanges": true
   }
 }
 ```
 
 ### Config options
 
-| Section     | Key                          | Values                                                                                | Default                     | Description                                                  |
-| ----------- | ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
-| root        | `reviewProvider`             | `github`, `gitlab`                                                                    | `github`                    | Selects the active review/publish provider                   |
-| `repos[]`   | `name`                       | string                                                                                | --                          | Unique repo identifier                                       |
-| `repos[]`   | `path`                       | string                                                                                | --                          | Absolute path to repo root                                   |
-| `repos[]`   | `language`                   | `typescript`, `tsx`, `swift`, `python`, `go`, `rust`, `java`, `javascript`, `graphql` | --                          | Primary language                                             |
-| `repos[]`   | `role`                       | string                                                                                | --                          | Repo's role in the ecosystem (e.g., `backend`, `ios`, `web`) |
-| `evolution` | `aggressiveness`             | `aggressive`, `moderate`, `on-demand`                                                 | `aggressive`                | How proactively to surface suggestions                       |
-| `evolution` | `maxSuggestionsPerSession`   | number                                                                                | `5`                         | Cap on evolution suggestions per session                     |
-| `evolution` | `categories`                 | array of strings                                                                      | all 5                       | Which categories to include                                  |
-| `quality`   | `blockOnFailure`             | boolean                                                                               | `true`                      | Whether quality violations block output                      |
-| `quality`   | `requireTestsForNewCode`     | boolean                                                                               | `true`                      | Require test coverage for new code                           |
-| `quality`   | `conventionStrictness`       | `strict`, `moderate`, `relaxed`                                                       | `strict`                    | How strictly to enforce conventions                          |
-| `context`   | `tokenBudget`                | number                                                                                | `8000`                      | Max tokens for context digest                                |
-| `context`   | `prioritize`                 | `changed-files-first`, `api-surface-first`                                            | `changed-files-first`       | What to prioritize in digest                                 |
-| `context`   | `includeRecentCommits`       | number                                                                                | `20`                        | How many recent commits to include                           |
-| `cache`     | `directory`                  | string                                                                                | `~/.claude/omni-link-cache` | Cache directory path                                         |
-| `cache`     | `maxAgeDays`                 | number                                                                                | `7`                         | Cache TTL in days                                            |
-| `daemon`    | `enabled` / `preferDaemon`   | booleans                                                                              | `false`                     | Enable warm graph state and prefer daemon-backed reads       |
-| `daemon`    | `statePath`                  | string                                                                                | cache-relative path         | Persistent SQLite daemon state file                          |
-| `github`    | `owner` / `repo`             | strings                                                                               | unset                       | Provider target used by `publish-review`                     |
-| `github`    | `publishMode`                | `dry-run`, `replay`, `github`                                                         | `dry-run`                   | Choose provider publish behavior                             |
-| `github`    | `replayDirectory` / `apiUrl` | strings                                                                               | provider defaults           | Replay output location or GitHub API endpoint                |
-| `gitlab`    | `namespace` / `project`      | strings                                                                               | unset                       | Provider target used when `reviewProvider=gitlab`            |
-| `gitlab`    | `publishMode`                | `dry-run`, `replay`, `gitlab`                                                         | `dry-run`                   | Choose provider publish behavior                             |
-| `gitlab`    | `replayDirectory` / `apiUrl` | strings                                                                               | provider defaults           | Replay output location or GitLab API endpoint                |
-| `ownership` | `defaultOwner` / `rules[]`   | owner mappings by repo, path, API, or package                                         | disabled                    | Resolve ownership across repos and API surfaces              |
-| `runtime`   | artifact paths               | strings                                                                               | disabled                    | Ingest coverage, test, OpenAPI, GraphQL, telemetry artifacts |
-| `policies`  | branch/risk rules            | arrays + booleans + risk threshold                                                    | disabled                    | Gate execution and protected-branch behavior                 |
-| `maxTier`   | semantic / execution flags   | booleans + thresholds                                                                 | disabled                    | Enable semantic accuracy and max-tier platform modules       |
+| Section     | Key                        | Values                                                                                | Default                        | Description                                                     |
+| ----------- | -------------------------- | ------------------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------- |
+| root        | `workflowProfile`          | `hustlexp`                                                                            | unset                          | Activates the HustleXP preset for authority, bridge, and policy |
+| root        | `reviewProvider`           | `github`                                                                              | `github`                       | Active publish target for the tailored fork                     |
+| `repos[]`   | `name`                     | string                                                                                | --                             | Unique repo identifier                                          |
+| `repos[]`   | `path`                     | string                                                                                | --                             | Absolute path to repo root                                      |
+| `repos[]`   | `language`                 | `typescript`, `tsx`, `swift`, `python`, `go`, `rust`, `java`, `javascript`, `graphql` | --                             | Primary language                                                |
+| `repos[]`   | `role`                     | `ios-client`, `backend-api`, `product-governance`, or another string                  | --                             | Repo role used by the workflow preset                           |
+| `repos[]`   | `exclude`                  | string array                                                                          | preset by role                 | Extra ignore globs for noisy or non-authoritative paths         |
+| `authority` | `enabled` / `docsRepo`     | boolean + string                                                                      | enabled in profile             | Turns docs authority parsing on and points it at the docs repo  |
+| `authority` | `phaseMode`                | `reconciliation`, `strict`                                                            | `reconciliation`               | Reconciliation reports drift; strict blocks review and execute  |
+| `authority` | `authorityFiles`           | path map                                                                              | HustleXP defaults              | Relative locations for phase, freeze, guardrails, API, schema   |
+| `bridges`   | `swiftTrpc`                | object                                                                                | enabled in profile             | Swift client call extraction and backend correlation            |
+| `quality`   | `blockOnFailure`           | boolean                                                                               | `true`                         | Whether quality violations block output                         |
+| `quality`   | `requireTestsForNewCode`   | boolean                                                                               | `true`                         | Require test coverage for new code                              |
+| `quality`   | `conventionStrictness`     | `strict`, `moderate`, `relaxed`                                                       | `strict`                       | How strictly to enforce conventions                             |
+| `context`   | `tokenBudget`              | number                                                                                | `8000`                         | Max tokens for context digest                                   |
+| `context`   | `prioritize`               | `changed-files-first`, `api-surface-first`                                            | `api-surface-first` in profile | What to prioritize in digest                                    |
+| `context`   | `includeRecentCommits`     | number                                                                                | `20`                           | How many recent commits to include                              |
+| `cache`     | `directory`                | string                                                                                | machine-local                  | Cache directory path                                            |
+| `cache`     | `maxAgeDays`               | number                                                                                | `7`                            | Cache TTL in days                                               |
+| `daemon`    | `enabled` / `preferDaemon` | booleans                                                                              | `true` in profile              | Enable warm graph state and prefer daemon-backed reads          |
+| `daemon`    | `statePath`                | string                                                                                | cache-relative path            | Persistent SQLite daemon state file                             |
+| `github`    | `owner` / `repo`           | strings                                                                               | unset                          | Provider target used by `publish-review`                        |
+| `github`    | `publishMode`              | `dry-run`, `replay`, `github`                                                         | `replay` in profile            | Choose provider publish behavior                                |
+| `ownership` | `defaultOwner` / `rules[]` | owner mappings by repo, path, API, or package                                         | enabled in profile             | Resolve ownership across repos and domains                      |
+| `runtime`   | artifact paths             | strings                                                                               | disabled                       | Ingest coverage, test, telemetry, and trace artifacts           |
+| `policies`  | branch/risk rules          | arrays + booleans + risk threshold                                                    | strict HustleXP defaults       | Gate execution and protected-branch behavior                    |
+| `maxTier`   | semantic / execution flags | booleans + thresholds                                                                 | enabled in profile             | Enable semantic accuracy and max-tier platform modules          |
 
 ## Skills
 
@@ -322,9 +370,10 @@ npm run format:check
 npm run verify
 npm run verify:max
 npm run verify:stress
+npm run verify:hustlexp
 ```
 
-`verify:stress` is the release bar. It runs the full repo verification surface and, when provider credentials are configured, also runs the live GitHub and GitLab sandbox publish gates.
+`verify:stress` is the release bar. `verify:hustlexp` is the focused workflow bar for the tailored fork. It reruns upstream verification and then explicitly revalidates the authority layer, Swift↔tRPC bridge, phase-drift rules, and blocked-apply behavior on the HustleXP fixture workspace.
 
 ### CLI smoke test
 
@@ -347,12 +396,11 @@ node dist/cli.js watch --once --config .omni-link.json
 node dist/cli.js owners --config .omni-link.json
 node dist/cli.js review-pr --base main --head HEAD --config .omni-link.json
 node dist/cli.js publish-review --pr 42 --base main --head HEAD --config .omni-link.json
-node dist/cli.js publish-review --pr 42 --base main --head HEAD --config .omni-link.gitlab.json
 node dist/cli.js apply --base main --head HEAD --config .omni-link.json
 node dist/cli.js rollback --config .omni-link.json
 ```
 
-In live provider modes, `publish-review` fetches PR or MR metadata before publishing so omni-link can resolve missing head SHAs, detect closed or merged review targets, and trim provider payloads to provider-specific limits before comments or checks are emitted.
+In live provider mode, `publish-review` fetches GitHub PR metadata before publishing so the fork can resolve missing head SHAs, detect closed or merged review targets, and trim provider payloads before comments or checks are emitted.
 
 ### Releases
 
@@ -361,7 +409,7 @@ Create a git tag like `v1.0.0` and push it to trigger the release workflow. The 
 ### Project structure
 
 ```
-omni-link/
+omni-link-hustlexp/
   engine/           # Core TypeScript engine
     scanner/        # Tree-sitter parsing, extraction
     grapher/        # Cross-repo graph building
@@ -376,7 +424,7 @@ omni-link/
   commands/         # Slash command docs
   agents/           # 3 specialized agents
   hooks/            # Session-start hook
-  tests/            # Test suite (488+ core tests, plus live-provider integration gates)
+  tests/            # Test suite, including HustleXP authority/bridge/profile coverage
     scanner/        # Scanner unit tests
     grapher/        # Grapher unit tests
     context/        # Context engine tests

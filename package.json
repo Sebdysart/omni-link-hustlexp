@@ -1,24 +1,28 @@
 {
-  "name": "omni-link",
+  "name": "omni-link-hustlexp",
   "version": "1.0.0",
-  "description": "Multi-repo AI ecosystem plugin for Claude Code",
+  "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code",
   "type": "module",
   "main": "dist/index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Sebdysart/omni-link.git"
+    "url": "https://github.com/Sebdysart/omni-link-hustlexp.git"
   },
   "bugs": {
-    "url": "https://github.com/Sebdysart/omni-link/issues"
+    "url": "https://github.com/Sebdysart/omni-link-hustlexp/issues"
   },
-  "homepage": "https://github.com/Sebdysart/omni-link#readme",
+  "homepage": "https://github.com/Sebdysart/omni-link-hustlexp#readme",
   "keywords": [
     "claude-code",
     "plugin",
     "multi-repo",
     "ecosystem",
     "tree-sitter",
-    "code-analysis"
+    "code-analysis",
+    "hustlexp",
+    "swift",
+    "trpc",
+    "authority-gates"
   ],
   "bin": {
     "omni-link": "dist/cli.js"
@@ -44,7 +48,8 @@
     "review:pr": "node dist/cli.js review-pr --base main --head HEAD",
     "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
     "verify:max": "npm run verify && npm run smoke:max && npm run smoke:contracts && npm run smoke:package",
-    "verify:stress": "npm run verify:max && npm run stress:full && npm run test:providers:live:if-configured"
+    "verify:stress": "npm run verify:max && npm run stress:full && npm run test:providers:live:if-configured",
+    "verify:hustlexp": "npm run verify:max && npm test -- tests/authority/index.test.ts tests/bridges/swift-trpc.test.ts tests/integration/hustlexp-profile.test.ts"
   },
   "engines": {
     "node": ">=18.0.0"

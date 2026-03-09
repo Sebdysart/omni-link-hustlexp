@@ -8,9 +8,12 @@ export interface GitignoreResolver {
 
 const DEFAULT_IGNORE_PATTERNS = ['node_modules/', '.git/', 'dist/', 'build/', '.next/'];
 
-export function createGitignoreResolver(repoPath: string): GitignoreResolver {
+export function createGitignoreResolver(
+  repoPath: string,
+  extraPatterns: string[] = [],
+): GitignoreResolver {
   const ig = ignore();
-  ig.add(DEFAULT_IGNORE_PATTERNS);
+  ig.add([...DEFAULT_IGNORE_PATTERNS, ...extraPatterns]);
 
   const ignoreFiles = ['.gitignore', '.claudeignore'];
 

@@ -36,6 +36,7 @@
       "baseRef",
       "contractMismatches",
       "executionPlan",
+      "findings",
       "generatedAt",
       "headRef",
       "impact",

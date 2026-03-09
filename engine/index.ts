@@ -56,12 +56,26 @@ import {
 import { attachRuntimeSignals, rankEvolutionSuggestions } from './runtime/index.js';
 import { scanRepo } from './scanner/index.js';
 import { defaultBaseRefForProvider, publishReviewArtifact } from './providers/index.js';
+import { analyzeAuthorityDrift, loadAuthorityState } from './authority/index.js';
+import { analyzeSwiftTrpcBridge } from './bridges/swift-trpc.js';
 import type { FileCache } from './scanner/index.js';
 import type { HealthScoreResult } from './quality/health-scorer.js';
 import type { ReferenceCheckResult } from './quality/reference-checker.js';
 import type { ConventionCheckResult } from './quality/convention-validator.js';
 import type { SlopCheckResult } from './quality/slop-detector.js';
 import type { RuleCheckResult } from './quality/rule-engine.js';
+
+function uniqueBy<T>(items: T[], keyFor: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const results: T[] = [];
+  for (const item of items) {
+    const key = keyFor(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push(item);
+  }
+  return results;
+}
 
 export { SimulateOnlyError } from './quality/simulate-guard.js';
 
@@ -126,7 +140,40 @@ async function scanConfiguredRepos(config: OmniLinkConfig): Promise<RepoManifest
 }
 
 function enrichGraph(graph: EcosystemGraph, config: OmniLinkConfig): EcosystemGraph {
-  return attachRuntimeSignals(attachOwnersToGraph(graph, config), config);
+  let nextGraph = graph;
+
+  if (config.workflowProfile === 'hustlexp') {
+    const authority = loadAuthorityState(config);
+    const bridgeAnalysis = analyzeSwiftTrpcBridge(config, nextGraph, authority);
+    const authorityFindings = analyzeAuthorityDrift(nextGraph, authority, {
+      backendProcedureIds: bridgeAnalysis.backendProcedures.map(
+        (procedure) => `${procedure.router}.${procedure.procedure}`,
+      ),
+      iosCallCount: bridgeAnalysis.iosCalls.length,
+    });
+
+    nextGraph = {
+      ...nextGraph,
+      bridges: uniqueBy(
+        [...nextGraph.bridges, ...bridgeAnalysis.bridges],
+        (bridge) =>
+          `${bridge.consumer.repo}:${bridge.consumer.file}:${bridge.consumer.line}:${bridge.provider.repo}:${bridge.provider.route}`,
+      ),
+      contractMismatches: uniqueBy(
+        [...nextGraph.contractMismatches, ...bridgeAnalysis.mismatches],
+        (mismatch) =>
+          `${mismatch.kind}:${mismatch.provider.repo}:${mismatch.provider.file}:${mismatch.provider.field}:${mismatch.consumer.repo}:${mismatch.consumer.file}:${mismatch.description}`,
+      ),
+      authority: authority ?? undefined,
+      findings: uniqueBy(
+        [...(nextGraph.findings ?? []), ...authorityFindings, ...bridgeAnalysis.findings],
+        (finding) =>
+          `${finding.kind}:${finding.repo}:${finding.file}:${finding.line}:${finding.description}`,
+      ),
+    };
+  }
+
+  return attachRuntimeSignals(attachOwnersToGraph(nextGraph, config), config);
 }
 
 async function scanLive(config: OmniLinkConfig): Promise<ScanResult> {
@@ -257,7 +304,11 @@ export async function reviewPr(
   const owners = reviewGraph.owners ?? [];
   const risk = scoreRisk(reviewGraph);
   const executionPlan = createExecutionPlan(config, reviewGraph, risk, owners);
-  const policyDecisions = evaluatePolicies(config, executionPlan.baseBranch, risk, owners);
+  const policyDecisions = evaluatePolicies(config, executionPlan.baseBranch, risk, owners, {
+    authorityDrift:
+      config.authority?.phaseMode === 'strict' &&
+      (reviewGraph.findings ?? []).some((finding) => finding.kind === 'authority_drift'),
+  });
   const artifact = attachExecutionPlan(
     createReviewArtifact(
       reviewGraph,
