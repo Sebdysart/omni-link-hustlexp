@@ -276,7 +276,7 @@ export async function impactFromRefs(
 
 export async function health(config: OmniLinkConfig): Promise<HealthResult> {
   const result = await loadScanResult(config);
-  return scoreEcosystemHealth(result.graph);
+  return scoreEcosystemHealth(result.graph, config);
 }
 
 export async function evolve(config: OmniLinkConfig): Promise<EvolutionSuggestion[]> {

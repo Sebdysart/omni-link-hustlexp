@@ -415,6 +415,96 @@ describe('analyzeGaps', () => {
     });
   });
 
+  describe('language filtering', () => {
+    it('skips markdown repos entirely', () => {
+      const manifest = makeManifest({
+        repoId: 'docs',
+        language: 'markdown',
+        apiSurface: {
+          routes: [
+            {
+              method: 'GET',
+              path: '/api/docs',
+              handler: 'getDocs',
+              file: 'src/routes.ts',
+              line: 1,
+            },
+            {
+              method: 'POST',
+              path: '/api/docs',
+              handler: 'createDoc',
+              file: 'src/routes.ts',
+              line: 10,
+            },
+          ],
+          procedures: [],
+          exports: [
+            {
+              name: 'deadExport',
+              kind: 'function',
+              signature: 'function deadExport()',
+              file: 'src/helpers.ts',
+              line: 1,
+            },
+          ],
+        },
+        dependencies: { internal: [], external: [] },
+      });
+
+      const findings = analyzeGaps([manifest]);
+      expect(findings).toEqual([]);
+    });
+
+    it('skips swift repos entirely', () => {
+      const manifest = makeManifest({
+        repoId: 'ios-app',
+        language: 'swift',
+        apiSurface: {
+          routes: [],
+          procedures: [],
+          exports: [
+            {
+              name: 'unusedHelper',
+              kind: 'function',
+              signature: 'function unusedHelper()',
+              file: 'Sources/Helpers.swift',
+              line: 5,
+            },
+          ],
+        },
+        dependencies: { internal: [], external: [] },
+      });
+
+      const findings = analyzeGaps([manifest]);
+      expect(findings).toEqual([]);
+    });
+
+    it('does NOT skip typescript repos', () => {
+      const manifest = makeManifest({
+        repoId: 'backend',
+        language: 'typescript',
+        apiSurface: {
+          routes: [],
+          procedures: [],
+          exports: [
+            {
+              name: 'unusedHelper',
+              kind: 'function',
+              signature: 'function unusedHelper()',
+              file: 'src/helpers.ts',
+              line: 5,
+            },
+          ],
+        },
+        dependencies: { internal: [], external: [] },
+      });
+
+      const findings = analyzeGaps([manifest]);
+      expect(findings.length).toBeGreaterThan(0);
+      expect(findings[0].kind).toBe('dead-export');
+    });
+  });
+
   describe('edge cases', () => {
     it('returns empty array for empty manifests', () => {
       const findings = analyzeGaps([]);

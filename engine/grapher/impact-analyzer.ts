@@ -1,6 +1,6 @@
 // engine/grapher/impact-analyzer.ts — Trace change ripples across repos
 
-import type { EcosystemGraph, ImpactPath, ApiBridge } from '../types.js';
+import { UNKNOWN_LINE, type EcosystemGraph, type ImpactPath, type ApiBridge } from '../types.js';
 
 /**
  * Analyze the impact of a set of changed files across the ecosystem.
@@ -28,7 +28,7 @@ export function analyzeImpact(
       affected.push({
         repo: changed.repo,
         file: dep.file,
-        line: 0, // line info not available from dep graph alone
+        line: UNKNOWN_LINE, // line info not available from dep graph alone
         reason: `imports from ${changed.file} via [${dep.imports.join(', ')}]`,
         severity: assessSeverity(changed.change),
       });

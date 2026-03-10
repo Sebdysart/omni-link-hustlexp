@@ -568,6 +568,30 @@ describe('rich evidence with manifests', () => {
     expect(emptyFileEvidence).toEqual([]);
   });
 
+  it('does not produce benchmark findings for non-server repos (markdown, swift)', () => {
+    const docsRepo = makeManifest({
+      repoId: 'docs',
+      language: 'markdown',
+      apiSurface: { routes: [], procedures: [], exports: [] },
+      dependencies: { internal: [], external: [] },
+    });
+
+    const iosRepo = makeManifest({
+      repoId: 'ios-app',
+      language: 'swift',
+      apiSurface: { routes: [], procedures: [], exports: [] },
+      dependencies: { internal: [], external: [] },
+    });
+
+    const graph = makeGraph([docsRepo, iosRepo]);
+    const config = makeConfig({ categories: ['security', 'performance', 'features', 'scale'] });
+
+    const suggestions = analyzeEvolution(graph, config);
+
+    // Non-server repos should produce zero suggestions (no false positives)
+    expect(suggestions).toEqual([]);
+  });
+
   it('evidence references match known procedure and route files from the manifest', () => {
     const backend = makeManifest({
       repoId: 'backend',

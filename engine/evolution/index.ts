@@ -163,20 +163,23 @@ function benchmarkToBottleneckFindings(
       }
     }
 
-    // Fallback: use first available procedure/route as representative
+    // Fallback: use first available procedure/route as representative.
+    // Skip entirely if repo has no procedures or routes (e.g. markdown docs).
     const fallbackFile =
-      manifest?.apiSurface.procedures[0]?.file ?? manifest?.apiSurface.routes[0]?.file ?? '';
+      manifest?.apiSurface.procedures[0]?.file ?? manifest?.apiSurface.routes[0]?.file;
     const fallbackLine =
-      manifest?.apiSurface.procedures[0]?.line ?? manifest?.apiSurface.routes[0]?.line ?? 0;
+      manifest?.apiSurface.procedures[0]?.line ?? manifest?.apiSurface.routes[0]?.line;
 
-    findings.push({
-      kind,
-      description,
-      repo: result.repo,
-      file: fallbackFile,
-      line: fallbackLine,
-      severity,
-    });
+    if (fallbackFile && fallbackLine != null) {
+      findings.push({
+        kind,
+        description,
+        repo: result.repo,
+        file: fallbackFile,
+        line: fallbackLine,
+        severity,
+      });
+    }
   }
 
   return findings;

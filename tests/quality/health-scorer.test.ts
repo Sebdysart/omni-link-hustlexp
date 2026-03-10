@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { scoreHealth, scoreEcosystemHealth } from '../../engine/quality/health-scorer.js';
-import type { RepoManifest, EcosystemGraph } from '../../engine/types.js';
+import type { RepoManifest, EcosystemGraph, OmniLinkConfig } from '../../engine/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +59,36 @@ function makeGraph(repos: RepoManifest[]): EcosystemGraph {
     sharedTypes: [],
     contractMismatches: [],
     impactPaths: [],
+  };
+}
+
+function makeConfig(repoRoles: Array<{ name: string; role: string }>): OmniLinkConfig {
+  return {
+    repos: repoRoles.map((r) => ({
+      name: r.name,
+      path: `/repos/${r.name}`,
+      language: 'typescript',
+      role: r.role,
+    })),
+    evolution: {
+      aggressiveness: 'moderate',
+      maxSuggestionsPerSession: 5,
+      categories: ['feature'],
+    },
+    quality: {
+      blockOnFailure: false,
+      requireTestsForNewCode: false,
+      conventionStrictness: 'relaxed',
+    },
+    context: {
+      tokenBudget: 8000,
+      prioritize: 'changed-files-first',
+      includeRecentCommits: 10,
+    },
+    cache: {
+      directory: '/tmp/cache',
+      maxAgeDays: 7,
+    },
   };
 }
 
@@ -334,5 +364,139 @@ describe('scoreEcosystemHealth', () => {
       (result.perRepo['a'].overall + result.perRepo['b'].overall) / 2,
     );
     expect(result.overall).toBe(expectedOverall);
+  });
+
+  it('uses role-based weights when config is provided', () => {
+    const docsRepo = makeManifest({
+      repoId: 'docs',
+      health: {
+        testCoverage: null,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 5,
+        deadCode: [],
+      },
+    });
+
+    const backendRepo = makeManifest({
+      repoId: 'backend',
+      health: {
+        testCoverage: 50,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const config = makeConfig([
+      { name: 'docs', role: 'product-governance' },
+      { name: 'backend', role: 'backend-api' },
+    ]);
+
+    const graph = makeGraph([docsRepo, backendRepo]);
+
+    // With config (role-aware)
+    const withConfig = scoreEcosystemHealth(graph, config);
+    // Without config (default weights)
+    const withoutConfig = scoreEcosystemHealth(graph);
+
+    // Scores should differ because roles assign different weights
+    // product-governance has test weight 0.0, so null coverage doesn't matter
+    // backend-api has test weight 0.40, so 50% coverage drags it down more
+    expect(withConfig.perRepo['docs'].overall).not.toBe(withoutConfig.perRepo['docs'].overall);
+    expect(withConfig.perRepo['backend'].overall).not.toBe(
+      withoutConfig.perRepo['backend'].overall,
+    );
+  });
+});
+
+// ─── Role-Aware Scoring ─────────────────────────────────────────────────────
+
+describe('scoreHealth — role-aware weights', () => {
+  it('scoreTests(null) returns 60 (neutral, not penalized)', () => {
+    const manifest = makeManifest({
+      health: {
+        testCoverage: null,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const result = scoreHealth(manifest);
+    expect(result.testScore).toBe(60);
+  });
+
+  it('product-governance role does not penalize for tests (weight is 0)', () => {
+    // A repo with null test coverage should get the same overall
+    // as one with 100% coverage when role is product-governance (test weight = 0)
+    const noTests = makeManifest({
+      health: {
+        testCoverage: null,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const fullTests = makeManifest({
+      health: {
+        testCoverage: 100,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const noTestsResult = scoreHealth(noTests, 'product-governance');
+    const fullTestsResult = scoreHealth(fullTests, 'product-governance');
+
+    // With test weight = 0, the test score should not affect overall
+    expect(noTestsResult.overall).toBe(fullTestsResult.overall);
+  });
+
+  it('backend-api role weights test coverage at 40%', () => {
+    // A perfect repo except for 0% test coverage.
+    // backend-api: overall = 0*0.40 + 100*0.25 + 100*0.20 + 100*0.15 = 60
+    // default:     overall = 0*0.30 + 100*0.25 + 100*0.25 + 100*0.20 = 70
+    const manifest = makeManifest({
+      health: {
+        testCoverage: 0,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const backendResult = scoreHealth(manifest, 'backend-api');
+    const defaultResult = scoreHealth(manifest);
+
+    // backend-api penalizes tests more heavily (40% vs 30%)
+    expect(backendResult.overall).toBeLessThan(defaultResult.overall);
+    // Verify the exact values
+    expect(backendResult.overall).toBe(60); // 0*0.40 + 100*0.25 + 100*0.20 + 100*0.15
+    expect(defaultResult.overall).toBe(70); // 0*0.30 + 100*0.25 + 100*0.25 + 100*0.20
+  });
+
+  it('unknown role falls back to default weights', () => {
+    const manifest = makeManifest({
+      health: {
+        testCoverage: 80,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const unknownRoleResult = scoreHealth(manifest, 'unknown-role');
+    const noRoleResult = scoreHealth(manifest);
+
+    expect(unknownRoleResult.overall).toBe(noRoleResult.overall);
   });
 });

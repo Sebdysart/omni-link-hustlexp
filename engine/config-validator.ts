@@ -10,6 +10,7 @@ const repoLanguageSchema = z.enum([
   'rust',
   'java',
   'graphql',
+  'markdown',
 ]);
 
 const evolutionCategorySchema = z.enum([

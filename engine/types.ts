@@ -1,5 +1,13 @@
 // engine/types.ts — Core type definitions for omni-link
 
+// ─── Sentinel Constants ─────────────────────────────────────────────────────
+
+/** Sentinel for source locations where the actual file is unknown */
+export const UNKNOWN_FILE = '[unknown-source]';
+
+/** Sentinel line number indicating unknown location within a file */
+export const UNKNOWN_LINE = 0;
+
 // --- Shared metadata ---
 
 export type SourceKind = 'parser' | 'semantic' | 'runtime' | 'mixed';

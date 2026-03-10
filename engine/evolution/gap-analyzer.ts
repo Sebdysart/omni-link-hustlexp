@@ -2,6 +2,8 @@
 
 import type { RepoManifest, RouteDefinition } from '../types.js';
 
+const NON_SERVER_LANGUAGES = new Set(['swift', 'kotlin', 'dart', 'objective-c', 'markdown']);
+
 // ─── Public Types ────────────────────────────────────────────────────────────
 
 export interface GapFinding {
@@ -178,6 +180,9 @@ export function analyzeGaps(manifests: RepoManifest[]): GapFinding[] {
   const findings: GapFinding[] = [];
 
   for (const manifest of manifests) {
+    // Skip non-server repos — gap detection (CRUD, dead exports, orphaned schemas) only applies to server codebases
+    if (NON_SERVER_LANGUAGES.has(manifest.language.toLowerCase())) continue;
+
     findings.push(
       ...detectIncompleteCrud(manifest),
       ...detectDeadExports(manifest),

@@ -1,12 +1,14 @@
 // engine/grapher/api-contract-map.ts — API contract mapper: bridge detection and type matching across repos
 
-import type {
-  RepoManifest,
-  ApiBridge,
-  TypeDef,
-  TypeField,
-  RouteDefinition,
-  ProcedureDef,
+import {
+  UNKNOWN_FILE,
+  UNKNOWN_LINE,
+  type RepoManifest,
+  type ApiBridge,
+  type TypeDef,
+  type TypeField,
+  type RouteDefinition,
+  type ProcedureDef,
 } from '../types.js';
 
 /**
@@ -346,6 +348,6 @@ function makeEmptyType(name: string, repo: string): TypeDef {
   return {
     name,
     fields: [],
-    source: { repo, file: 'unknown', line: 0 },
+    source: { repo, file: UNKNOWN_FILE, line: UNKNOWN_LINE },
   };
 }

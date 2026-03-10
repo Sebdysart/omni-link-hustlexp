@@ -279,7 +279,7 @@ describe('engine/index — health()', () => {
 
     expect(scanRepo).toHaveBeenCalledTimes(1);
     expect(buildEcosystemGraph).toHaveBeenCalledWith([m0]);
-    expect(scoreEcosystemHealth).toHaveBeenCalledWith(expectEnrichedGraph(graph));
+    expect(scoreEcosystemHealth).toHaveBeenCalledWith(expectEnrichedGraph(graph), config);
     expect(result).toBe(healthResult);
   });
 });
