@@ -243,9 +243,12 @@ export function formatDigest(
     } else {
       for (const repo of graph.repos) {
         const conv = repo.conventions;
+        const naming = conv.naming || 'unknown';
+        const org = conv.fileOrganization || 'unknown';
+        const errors = conv.errorHandling || 'unknown';
         const patterns = conv.patterns.length > 0 ? conv.patterns.join(', ') : 'none detected';
         sections.push(
-          `- **${repo.repoId}**: naming=${conv.naming}, org=${conv.fileOrganization}, errors=${conv.errorHandling}, patterns=[${patterns}]`,
+          `- **${repo.repoId}**: naming=${naming}, org=${org}, errors=${errors}, patterns=[${patterns}]`,
         );
       }
     }
@@ -415,8 +418,10 @@ function buildConventionSummary(repos: RepoManifest[]): Record<string, string> {
   const summary: Record<string, string> = {};
   for (const repo of repos) {
     const c = repo.conventions;
-    summary[repo.repoId] =
-      `naming=${c.naming}, org=${c.fileOrganization}, errors=${c.errorHandling}`;
+    const naming = c.naming || 'unknown';
+    const org = c.fileOrganization || 'unknown';
+    const errors = c.errorHandling || 'unknown';
+    summary[repo.repoId] = `naming=${naming}, org=${org}, errors=${errors}`;
   }
   return summary;
 }

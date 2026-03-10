@@ -189,17 +189,26 @@ export function mapApiContracts(manifests: RepoManifest[]): ApiBridge[] {
 
       const matches = findConsumerReferences(consumerManifest, provider);
       for (const match of matches) {
+        const providerRoute = provider.route;
+        const providerProc = provider.procedure;
+
         const routeLabel =
-          provider.kind === 'route'
-            ? `${provider.route!.method} ${provider.route!.path}`
-            : `${provider.procedure!.kind} ${provider.procedure!.name}`;
+          provider.kind === 'route' && providerRoute
+            ? `${providerRoute.method} ${providerRoute.path}`
+            : providerProc
+              ? `${providerProc.kind} ${providerProc.name}`
+              : 'unknown';
 
         const handlerName =
-          provider.kind === 'route' ? provider.route!.handler : provider.procedure!.name;
+          provider.kind === 'route' && providerRoute
+            ? providerRoute.handler
+            : (providerProc?.name ?? 'unknown');
 
         // Resolve output type for this endpoint
         const outputTypeName =
-          provider.kind === 'route' ? provider.route!.outputType : provider.procedure!.outputType;
+          provider.kind === 'route' && providerRoute
+            ? providerRoute.outputType
+            : providerProc?.outputType;
 
         const providerOutputType = outputTypeName
           ? findType(provider.manifest, outputTypeName)
@@ -273,10 +282,13 @@ function findConsumerReferences(
 ): ConsumerMatch[] {
   const matches: ConsumerMatch[] = [];
 
-  if (provider.kind === 'route') {
-    const route = provider.route!;
+  if (provider.kind === 'route' && provider.route) {
+    const route = provider.route;
     const urlPattern = route.path;
     const methodUrlPattern = `${route.method} ${route.path}`;
+
+    // Guard against empty path patterns (would match everything)
+    if (!urlPattern) return matches;
 
     for (const exp of consumer.apiSurface.exports) {
       if (
@@ -284,18 +296,27 @@ function findConsumerReferences(
         exp.signature.includes(methodUrlPattern) ||
         exp.name.includes(urlPattern)
       ) {
-        matches.push({ file: exp.file, line: exp.line });
+        matches.push({
+          file: exp.file || UNKNOWN_FILE,
+          line: exp.line ?? UNKNOWN_LINE,
+        });
       }
     }
   }
 
-  if (provider.kind === 'procedure') {
-    const proc = provider.procedure!;
+  if (provider.kind === 'procedure' && provider.procedure) {
+    const proc = provider.procedure;
     const procName = proc.name;
+
+    // Guard against empty procedure names (would match everything)
+    if (!procName) return matches;
 
     for (const exp of consumer.apiSurface.exports) {
       if (exp.signature.includes(procName) || exp.name.includes(procName)) {
-        matches.push({ file: exp.file, line: exp.line });
+        matches.push({
+          file: exp.file || UNKNOWN_FILE,
+          line: exp.line ?? UNKNOWN_LINE,
+        });
       }
     }
   }
@@ -331,7 +352,7 @@ function findType(manifest: RepoManifest, typeName: string): TypeDef | undefined
  */
 function resolveInputType(provider: ProviderEndpoint): TypeDef {
   const inputTypeName =
-    provider.kind === 'route' ? provider.route!.inputType : provider.procedure!.inputType;
+    provider.kind === 'route' ? provider.route?.inputType : provider.procedure?.inputType;
 
   if (inputTypeName) {
     const found = findType(provider.manifest, inputTypeName);

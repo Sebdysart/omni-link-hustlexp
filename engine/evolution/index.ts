@@ -1,10 +1,12 @@
 // engine/evolution/index.ts — Evolution orchestrator: wires gap + bottleneck + benchmark → ranked suggestions
 
-import type {
-  EcosystemGraph,
-  OmniLinkConfig,
-  EvolutionSuggestion,
-  RepoManifest,
+import {
+  UNKNOWN_FILE,
+  UNKNOWN_LINE,
+  type EcosystemGraph,
+  type OmniLinkConfig,
+  type EvolutionSuggestion,
+  type RepoManifest,
 } from '../types.js';
 import { analyzeGaps } from './gap-analyzer.js';
 import { findBottlenecks } from './bottleneck-finder.js';
@@ -41,14 +43,14 @@ function findAffectedLocations(
   if (category === 'security' && practice.toLowerCase().includes('validation')) {
     // Find mutation procedures (candidates missing input validation)
     for (const proc of manifest.apiSurface.procedures) {
-      if (proc.kind === 'mutation' && proc.file && proc.line) {
+      if (proc.kind === 'mutation' && proc.file && proc.file !== UNKNOWN_FILE && proc.line) {
         locations.push({ name: proc.name, file: proc.file, line: proc.line });
       }
     }
   } else if (category === 'security' && practice.toLowerCase().includes('rate')) {
     // Find mutation procedures/routes (candidates needing rate limiting)
     for (const proc of manifest.apiSurface.procedures) {
-      if (proc.kind === 'mutation' && proc.file && proc.line) {
+      if (proc.kind === 'mutation' && proc.file && proc.file !== UNKNOWN_FILE && proc.line) {
         locations.push({ name: proc.name, file: proc.file, line: proc.line });
       }
     }
@@ -56,6 +58,7 @@ function findAffectedLocations(
       if (
         ['POST', 'PUT', 'PATCH', 'DELETE'].includes(route.method.toUpperCase()) &&
         route.file &&
+        route.file !== UNKNOWN_FILE &&
         route.line
       ) {
         locations.push({
@@ -87,22 +90,55 @@ function findAffectedLocations(
           ? PAGINATION_INDICATORS.some((kw) => proc.outputType!.toLowerCase().includes(kw))
           : false);
 
-      if (!hasPagination && proc.file && proc.line) {
+      if (!hasPagination && proc.file && proc.file !== UNKNOWN_FILE && proc.line) {
         locations.push({ name: proc.name, file: proc.file, line: proc.line });
       }
     }
-  } else if (category === 'performance' && practice.toLowerCase().includes('version')) {
+  } else if (
+    (category === 'performance' || category === 'maintainability') &&
+    practice.toLowerCase().includes('version')
+  ) {
     // API versioning — affects all route files
     const seenFiles = new Set<string>();
     for (const route of manifest.apiSurface.routes) {
-      if (route.file && !seenFiles.has(route.file)) {
+      if (route.file && route.file !== UNKNOWN_FILE && !seenFiles.has(route.file)) {
         seenFiles.add(route.file);
         locations.push({ name: route.path, file: route.file, line: route.line });
       }
     }
+  } else if (category === 'reliability' && practice.toLowerCase().includes('error')) {
+    // Error handling middleware — affects all route/procedure files
+    const seenFiles = new Set<string>();
+    for (const route of manifest.apiSurface.routes) {
+      if (route.file && route.file !== UNKNOWN_FILE && !seenFiles.has(route.file)) {
+        seenFiles.add(route.file);
+        locations.push({
+          name: `${route.method} ${route.path}`,
+          file: route.file,
+          line: route.line,
+        });
+      }
+    }
+  } else if (category === 'observability' && practice.toLowerCase().includes('log')) {
+    // Structured logging — affects the main entry point or first route file
+    const seenFiles = new Set<string>();
+    for (const route of manifest.apiSurface.routes) {
+      if (route.file && route.file !== UNKNOWN_FILE && !seenFiles.has(route.file)) {
+        seenFiles.add(route.file);
+        locations.push({
+          name: `${route.method} ${route.path}`,
+          file: route.file,
+          line: route.line,
+        });
+        break; // logging is typically set up once — one representative file is enough
+      }
+    }
   }
 
-  return locations;
+  // Filter out any locations that have sentinel/empty file or line values
+  return locations.filter(
+    (loc) => loc.file && loc.file !== UNKNOWN_FILE && loc.line !== UNKNOWN_LINE,
+  );
 }
 
 // ─── Benchmark → BottleneckFinding Adapter ──────────────────────────────────
@@ -137,6 +173,12 @@ function benchmarkToBottleneckFindings(
       case 'reliability':
         kind = 'sync-in-async';
         break;
+      case 'maintainability':
+        kind = 'no-caching';
+        break;
+      case 'observability':
+        kind = 'no-caching';
+        break;
       default:
         kind = 'no-caching';
         break;
@@ -164,13 +206,19 @@ function benchmarkToBottleneckFindings(
     }
 
     // Fallback: use first available procedure/route as representative.
-    // Skip entirely if repo has no procedures or routes (e.g. markdown docs).
+    // Skip entirely if repo has no procedures or routes (e.g. markdown docs),
+    // or if the fallback file/line would be sentinel/empty values.
     const fallbackFile =
       manifest?.apiSurface.procedures[0]?.file ?? manifest?.apiSurface.routes[0]?.file;
     const fallbackLine =
       manifest?.apiSurface.procedures[0]?.line ?? manifest?.apiSurface.routes[0]?.line;
 
-    if (fallbackFile && fallbackLine != null) {
+    if (
+      fallbackFile &&
+      fallbackFile !== UNKNOWN_FILE &&
+      fallbackLine != null &&
+      fallbackLine !== UNKNOWN_LINE
+    ) {
       findings.push({
         kind,
         description,

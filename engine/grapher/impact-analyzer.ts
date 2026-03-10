@@ -79,7 +79,7 @@ function findInternalDependents(
   const repo = graph.repos.find((r) => r.repoId === repoId);
   if (!repo) return [];
 
-  const internalDeps = repo.dependencies.internal;
+  const internalDeps = repo.dependencies?.internal ?? [];
 
   // Build reverse adjacency: file -> files that import it
   const reverseAdj = new Map<string, Array<{ from: string; imports: string[] }>>();
@@ -134,23 +134,26 @@ function findCrossRepoBridgeConsumers(
 ): ApiBridge[] {
   const matches: ApiBridge[] = [];
 
+  if (!graph.bridges || graph.bridges.length === 0) return matches;
+
+  // Resolve the provider repo once outside the loop
+  const providerRepo = graph.repos.find((r) => r.repoId === repoId);
+  if (!providerRepo) return matches;
+
+  const routes = providerRepo.apiSurface?.routes ?? [];
+  const procedures = providerRepo.apiSurface?.procedures ?? [];
+
   for (const bridge of graph.bridges) {
     if (bridge.provider.repo !== repoId) continue;
 
-    // Check if the changed file is referenced by this bridge's provider route
-    // The route string format is "METHOD /path", and we check if the changed file
-    // is the source file for that route
-    const providerRepo = graph.repos.find((r) => r.repoId === repoId);
-    if (!providerRepo) continue;
-
     // Find the route definition in the provider repo
-    const routeMatch = providerRepo.apiSurface.routes.find((r) => {
+    const routeMatch = routes.find((r) => {
       const routeLabel = `${r.method} ${r.path}`;
       return routeLabel === bridge.provider.route && r.file === changedFile;
     });
 
     // Also match procedure-based bridges
-    const procMatch = providerRepo.apiSurface.procedures.find((p) => {
+    const procMatch = procedures.find((p) => {
       const procLabel = `${p.kind} ${p.name}`;
       return procLabel === bridge.provider.route && p.file === changedFile;
     });

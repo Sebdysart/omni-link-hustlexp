@@ -1,6 +1,11 @@
 // engine/evolution/bottleneck-finder.ts — Pattern-based detection of performance issues from manifest data
 
-import type { RepoManifest, RouteDefinition, ProcedureDef } from '../types.js';
+import {
+  UNKNOWN_FILE,
+  type RepoManifest,
+  type RouteDefinition,
+  type ProcedureDef,
+} from '../types.js';
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -225,7 +230,7 @@ function detectMissingRateLimiting(manifest: RepoManifest): BottleneckFinding[] 
   const totalMutations = mutationRoutes.length + mutationProcedures.length;
 
   // Resolve a representative file/line — prefer routes, fall back to procedures
-  const representativeFile = mutationRoutes[0]?.file ?? mutationProcedures[0]?.file ?? '';
+  const representativeFile = mutationRoutes[0]?.file || mutationProcedures[0]?.file || UNKNOWN_FILE;
   const representativeLine = mutationRoutes[0]?.line ?? mutationProcedures[0]?.line ?? 1;
 
   findings.push({
@@ -259,7 +264,7 @@ function detectNoQueue(manifest: RepoManifest): BottleneckFinding[] {
       repo: manifest.repoId,
       severity: 'medium',
       description: `${mutationCount} mutation procedures with no job queue detected. Consider adding a queue (e.g., BullMQ) for background processing.`,
-      file: manifest.apiSurface.procedures[0]?.file ?? '',
+      file: manifest.apiSurface.procedures[0]?.file || UNKNOWN_FILE,
       line: manifest.apiSurface.procedures[0]?.line ?? 1,
     },
   ];

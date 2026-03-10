@@ -1,6 +1,11 @@
 // engine/evolution/upgrade-proposer.ts — Generate ranked EvolutionSuggestions from gap + bottleneck findings
 
-import type { RepoManifest, EvolutionSuggestion } from '../types.js';
+import {
+  UNKNOWN_FILE,
+  UNKNOWN_LINE,
+  type RepoManifest,
+  type EvolutionSuggestion,
+} from '../types.js';
 import type { GapFinding } from './gap-analyzer.js';
 import type { BottleneckFinding } from './bottleneck-finder.js';
 
@@ -311,6 +316,27 @@ function bottleneckToSuggestion(bn: BottleneckFinding): EvolutionSuggestion {
   };
 }
 
+// ─── Evidence Validation ─────────────────────────────────────────────────────
+
+/**
+ * Returns true if an evidence item has meaningful file/line evidence
+ * (not empty, not sentinel values).
+ */
+function hasValidEvidence(evidence: { file: string; line: number }): boolean {
+  return Boolean(evidence.file) && evidence.file !== UNKNOWN_FILE && evidence.line !== UNKNOWN_LINE;
+}
+
+/**
+ * Strip evidence items that have empty/sentinel file or line values from
+ * a suggestion. Returns the suggestion with cleaned evidence array.
+ */
+function cleanSuggestionEvidence(suggestion: EvolutionSuggestion): EvolutionSuggestion {
+  return {
+    ...suggestion,
+    evidence: suggestion.evidence.filter(hasValidEvidence),
+  };
+}
+
 // ─── Main Entry Point ───────────────────────────────────────────────────────
 
 /**
@@ -334,5 +360,12 @@ export function proposeUpgrades(
     suggestions.push(bottleneckToSuggestion(bn));
   }
 
-  return deduplicateSuggestions(sortSuggestions(suggestions));
+  // Clean evidence: strip items with empty/sentinel file:line, then drop
+  // suggestions that have zero evidence remaining (pure best-practice notes
+  // with no concrete codebase anchor).
+  const cleaned = deduplicateSuggestions(sortSuggestions(suggestions))
+    .map(cleanSuggestionEvidence)
+    .filter((s) => s.evidence.length > 0);
+
+  return cleaned;
 }
