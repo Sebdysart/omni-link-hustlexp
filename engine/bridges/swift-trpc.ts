@@ -771,6 +771,67 @@ export function extractBackendProcedureRefs(
     .filter((procedure) => procedure.router !== 'index' && procedure.router !== 'trpc');
 }
 
+/**
+ * Compute variable confidence for bridge mismatches based on match quality.
+ * Factors:
+ * - Mismatch kind: procedure name match vs field-level vs type-level
+ * - Severity: breaking issues get higher confidence (we're more sure they matter)
+ * - Whether docs authority confirms the procedure exists
+ */
+function computeBridgeConfidence(
+  kind: string,
+  severity: 'breaking' | 'warning' | 'info',
+  description: string,
+): number {
+  // Base confidence by severity
+  let base: number;
+  switch (severity) {
+    case 'breaking':
+      base = 0.94;
+      break;
+    case 'warning':
+      base = 0.82;
+      break;
+    case 'info':
+      base = 0.7;
+      break;
+  }
+
+  // Adjust by mismatch kind
+  switch (kind) {
+    case 'obsolete-call':
+      // Very confident: procedure simply doesn't exist on backend
+      base = Math.max(base, 0.92);
+      break;
+    case 'missing-procedure':
+      // Procedure exists in code but not in docs — medium-high confidence
+      if (description.includes('docs authority does not declare')) {
+        base = Math.min(base + 0.03, 0.9);
+      }
+      break;
+    case 'missing-field':
+      // A required field is missing — high signal
+      if (description.includes('missing') && !description.includes('optional')) {
+        base = Math.min(base + 0.05, 0.93);
+      }
+      break;
+    case 'type-mismatch':
+      // Type differs — confidence depends on how different
+      if (description.includes('string-enum') || description.includes('named struct')) {
+        // Known type-representation artifacts — lower confidence
+        base = Math.max(base - 0.1, 0.6);
+      }
+      break;
+    case 'extra-field':
+      // Extra field in Swift not in docs — low severity, low confidence
+      base = Math.max(base - 0.05, 0.65);
+      break;
+  }
+
+  // Clamp to [0.50, 0.98]
+  return Math.round(Math.max(0.5, Math.min(0.98, base)) * 100) / 100;
+}
+
 function bridgeFinding(
   kind: ReviewFinding['kind'],
   severity: ReviewFinding['severity'],
@@ -789,14 +850,14 @@ function bridgeFinding(
     file,
     line,
     sourceKind: 'mixed',
-    confidence: severity === 'breaking' ? 0.94 : 0.84,
+    confidence: computeBridgeConfidence(kind, severity, description),
     riskScore: severity === 'breaking' ? 92 : severity === 'warning' ? 61 : 24,
     provenance: [
       {
         sourceKind: 'mixed',
         adapter: 'hustlexp-swift-trpc-bridge',
         detail: 'Swift tRPC contract correlation',
-        confidence: severity === 'breaking' ? 0.94 : 0.84,
+        confidence: computeBridgeConfidence(kind, severity, description),
       },
     ],
   };
@@ -816,14 +877,14 @@ function bridgeMismatch(
     consumer,
     severity,
     sourceKind: 'mixed',
-    confidence: severity === 'breaking' ? 0.94 : 0.84,
+    confidence: computeBridgeConfidence(kind, severity, description),
     riskScore: severity === 'breaking' ? 92 : severity === 'warning' ? 61 : 24,
     provenance: [
       {
         sourceKind: 'mixed',
         adapter: 'hustlexp-swift-trpc-bridge',
         detail: 'Swift tRPC contract mismatch',
-        confidence: severity === 'breaking' ? 0.94 : 0.84,
+        confidence: computeBridgeConfidence(kind, severity, description),
       },
     ],
   };

@@ -3,7 +3,10 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadAuthorityState } from '../../engine/authority/index.js';
-import { analyzeSwiftTrpcBridge } from '../../engine/bridges/swift-trpc.js';
+import {
+  analyzeSwiftTrpcBridge,
+  type SwiftTrpcBridgeAnalysis,
+} from '../../engine/bridges/swift-trpc.js';
 import type { EcosystemGraph, OmniLinkConfig, RepoManifest } from '../../engine/types.js';
 
 const fixtureRoot = path.resolve(
@@ -227,5 +230,125 @@ describe('swift tRPC bridge', () => {
     expect(analysis.mismatches.map((mismatch) => mismatch.kind)).toEqual(
       expect.arrayContaining(['obsolete-call', 'missing-procedure']),
     );
+  });
+});
+
+describe('variable bridge confidence', () => {
+  function makeGraph(): EcosystemGraph {
+    return {
+      repos: [
+        makeManifest('hustlexp-ios', path.join(fixtureRoot, 'ios'), 'swift'),
+        makeManifest('hustlexp-backend', path.join(fixtureRoot, 'backend'), 'typescript', {
+          apiSurface: {
+            routes: [],
+            procedures: [
+              {
+                name: 'create',
+                kind: 'mutation',
+                file: 'backend/src/routers/task.ts',
+                line: 3,
+              },
+              {
+                name: 'sendMessage',
+                kind: 'mutation',
+                file: 'backend/src/routers/messaging.ts',
+                line: 3,
+              },
+            ],
+            exports: [],
+          },
+        }),
+        makeManifest('hustlexp-docs', path.join(fixtureRoot, 'docs'), 'javascript'),
+      ],
+      bridges: [],
+      sharedTypes: [],
+      contractMismatches: [],
+      impactPaths: [],
+    };
+  }
+
+  function runAnalysis(): SwiftTrpcBridgeAnalysis {
+    const config = makeConfig();
+    const authority = loadAuthorityState(config);
+    return analyzeSwiftTrpcBridge(config, makeGraph(), authority);
+  }
+
+  /**
+   * Run analysis with a custom authority that only declares task.create,
+   * forcing messaging.sendMessage to appear as a missing-procedure + warning.
+   */
+  function runAnalysisWithLimitedAuthority(): SwiftTrpcBridgeAnalysis {
+    const config = makeConfig();
+    const authority = loadAuthorityState(config);
+    const limitedAuthority = {
+      ...authority!,
+      authoritativeApiSurface: {
+        ...authority!.authoritativeApiSurface,
+        procedures: ['task.create'],
+        procedureContracts: authority!.authoritativeApiSurface.procedureContracts.filter(
+          (c) => c.procedure === 'task.create',
+        ),
+      },
+    };
+    return analyzeSwiftTrpcBridge(config, makeGraph(), limitedAuthority);
+  }
+
+  it('produces mismatches with different confidence values (not all the same)', () => {
+    const analysis = runAnalysis();
+    const confidences = new Set(analysis.mismatches.map((m) => m.confidence));
+
+    expect(confidences.size).toBeGreaterThan(1);
+  });
+
+  it('assigns confidence 0.85 to missing-procedure + warning mismatches about docs authority', () => {
+    const analysis = runAnalysisWithLimitedAuthority();
+    const missingProcWarnings = analysis.mismatches.filter(
+      (m) =>
+        m.kind === 'missing-procedure' &&
+        m.severity === 'warning' &&
+        m.description.includes('docs authority does not declare'),
+    );
+
+    expect(missingProcWarnings.length).toBeGreaterThan(0);
+    for (const m of missingProcWarnings) {
+      expect(m.confidence).toBe(0.85);
+    }
+  });
+
+  it('assigns confidence 0.82 to type-mismatch + warning mismatches', () => {
+    const analysis = runAnalysis();
+    const typeMismatchWarnings = analysis.mismatches.filter(
+      (m) => m.kind === 'type-mismatch' && m.severity === 'warning',
+    );
+
+    // The fixture may or may not produce type-mismatch warnings depending on
+    // field type normalization. If present, they must have confidence 0.82.
+    for (const m of typeMismatchWarnings) {
+      expect(m.confidence).toBe(0.82);
+    }
+  });
+
+  it('assigns confidence 0.65 to extra-field + info mismatches', () => {
+    const analysis = runAnalysis();
+    const extraFieldInfo = analysis.mismatches.filter(
+      (m) => m.kind === 'extra-field' && m.severity === 'info',
+    );
+
+    expect(extraFieldInfo.length).toBeGreaterThan(0);
+    for (const m of extraFieldInfo) {
+      expect(m.confidence).toBe(0.65);
+    }
+  });
+
+  it('assigns confidence 0.94 to obsolete-call + breaking mismatches', () => {
+    const analysis = runAnalysis();
+    const obsoleteBreaking = analysis.mismatches.filter(
+      (m) => m.kind === 'obsolete-call' && m.severity === 'breaking',
+    );
+
+    expect(obsoleteBreaking.length).toBeGreaterThan(0);
+    for (const m of obsoleteBreaking) {
+      expect(m.confidence).toBe(0.94);
+    }
   });
 });

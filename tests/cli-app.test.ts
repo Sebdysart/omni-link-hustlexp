@@ -170,6 +170,7 @@ function createDeps(overrides: Partial<CliDeps> = {}): CliDeps {
         'update API_CONTRACT.md to declare backend procedures that are already live',
       ],
     })),
+    impact: vi.fn(async () => [{ repo: 'repo', file: 'src/simulated.ts' }]),
     impactFromRefs: vi.fn(async () => [{ repo: 'repo', file: 'src/ref.ts' }]),
     impactFromUncommitted: vi.fn(async () => [{ repo: 'repo', file: 'src/index.ts' }]),
     health: vi.fn(async () => ({ overall: 82, perRepo: { repo: { overall: 82 } } })),
@@ -191,6 +192,7 @@ describe('engine/cli-app parseArgs', () => {
       headRef: undefined,
       prNumber: undefined,
       headSha: undefined,
+      simulate: [],
       once: false,
       help: false,
     });
@@ -451,5 +453,61 @@ describe('engine/cli-app runCli', () => {
 
     expect(exitCode).toBe(1);
     expect(stderr[0]).toContain('No config file found.');
+  });
+});
+
+describe('engine/cli-app --simulate flag', () => {
+  it('parses --simulate repo:filepath into simulate array', () => {
+    const args = parseArgs([
+      'impact',
+      '--simulate',
+      'hustlexp-ai-backend:backend/src/routers/task.ts',
+    ]);
+
+    expect(args.simulate).toEqual(['hustlexp-ai-backend:backend/src/routers/task.ts']);
+  });
+
+  it('accumulates multiple --simulate flags', () => {
+    const args = parseArgs([
+      'impact',
+      '--simulate',
+      'hustlexp-ai-backend:src/routers/task.ts',
+      '--simulate',
+      'hustlexp-ios:Services/TaskService.swift',
+    ]);
+
+    expect(args.simulate).toEqual([
+      'hustlexp-ai-backend:src/routers/task.ts',
+      'hustlexp-ios:Services/TaskService.swift',
+    ]);
+  });
+
+  it('throws when --simulate value has no colon separator', () => {
+    expect(() =>
+      parseArgs(['impact', '--simulate', 'hustlexp-ai-backend-src-routers-task.ts']),
+    ).toThrow('--simulate value must be in format repo:filepath');
+  });
+
+  it('calls deps.impact() with simulated changed files when --simulate is used', async () => {
+    const { io } = createIo();
+    const deps = createDeps();
+    const exitCode = await runCli(
+      [
+        'impact',
+        '--simulate',
+        'hustlexp-ai-backend:src/routers/task.ts',
+        '--config',
+        '/tmp/config.json',
+      ],
+      io,
+      deps,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(deps.impact).toHaveBeenCalledWith(expect.any(Object), [
+      { repo: 'hustlexp-ai-backend', file: 'src/routers/task.ts', change: 'simulated' },
+    ]);
+    expect(deps.impactFromRefs).not.toHaveBeenCalled();
+    expect(deps.impactFromUncommitted).not.toHaveBeenCalled();
   });
 });

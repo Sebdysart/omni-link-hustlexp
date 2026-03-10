@@ -455,3 +455,164 @@ describe('analyzeEvolution', () => {
     expect(securitySuggestions.length).toBeGreaterThan(0);
   });
 });
+
+describe('rich evidence with manifests', () => {
+  it('produces suggestions with real file:line evidence when manifests have procedures', () => {
+    const backend = makeManifest({
+      repoId: 'backend',
+      apiSurface: {
+        routes: [
+          {
+            method: 'GET',
+            path: '/api/users',
+            handler: 'getUsers',
+            file: 'src/routes/users.ts',
+            line: 10,
+          },
+          {
+            method: 'POST',
+            path: '/api/users',
+            handler: 'createUser',
+            file: 'src/routes/users.ts',
+            line: 20,
+          },
+          {
+            method: 'POST',
+            path: '/api/orders',
+            handler: 'createOrder',
+            file: 'src/routes/orders.ts',
+            line: 5,
+          },
+        ],
+        procedures: [
+          {
+            name: 'create',
+            kind: 'mutation',
+            file: 'src/routers/task.ts',
+            line: 15,
+          },
+          {
+            name: 'listAll',
+            kind: 'query',
+            file: 'src/routers/task.ts',
+            line: 30,
+          },
+        ],
+        exports: [],
+      },
+      dependencies: { internal: [], external: [] },
+    });
+
+    const graph = makeGraph([backend]);
+    const config = makeConfig({ categories: ['feature', 'performance', 'security', 'scale'] });
+
+    const suggestions = analyzeEvolution(graph, config);
+
+    expect(suggestions.length).toBeGreaterThan(0);
+
+    // Collect all evidence entries across all suggestions
+    const allEvidence = suggestions.flatMap((s) => s.evidence);
+
+    // At least some evidence entries should have real file and line references
+    const evidenceWithFiles = allEvidence.filter((e) => e.file !== '' && e.line !== 0);
+    expect(evidenceWithFiles.length).toBeGreaterThan(0);
+  });
+
+  it('does not produce suggestions with empty-string file evidence when procedures exist', () => {
+    const backend = makeManifest({
+      repoId: 'backend',
+      apiSurface: {
+        routes: [
+          {
+            method: 'GET',
+            path: '/api/items',
+            handler: 'getItems',
+            file: 'src/routes/items.ts',
+            line: 10,
+          },
+          {
+            method: 'POST',
+            path: '/api/items',
+            handler: 'createItem',
+            file: 'src/routes/items.ts',
+            line: 25,
+          },
+        ],
+        procedures: [
+          {
+            name: 'submitPayment',
+            kind: 'mutation',
+            file: 'src/routers/payment.ts',
+            line: 8,
+          },
+          {
+            name: 'listTransactions',
+            kind: 'query',
+            file: 'src/routers/payment.ts',
+            line: 40,
+          },
+        ],
+        exports: [],
+      },
+      dependencies: { internal: [], external: [] },
+    });
+
+    const graph = makeGraph([backend]);
+    const config = makeConfig({ categories: ['feature', 'performance', 'security', 'scale'] });
+
+    const suggestions = analyzeEvolution(graph, config);
+
+    // All evidence entries should have non-empty file references
+    const allEvidence = suggestions.flatMap((s) => s.evidence);
+    const emptyFileEvidence = allEvidence.filter((e) => e.file === '');
+    expect(emptyFileEvidence).toEqual([]);
+  });
+
+  it('evidence references match known procedure and route files from the manifest', () => {
+    const backend = makeManifest({
+      repoId: 'backend',
+      apiSurface: {
+        routes: [
+          {
+            method: 'POST',
+            path: '/api/tasks',
+            handler: 'createTask',
+            file: 'src/routes/tasks.ts',
+            line: 12,
+          },
+          {
+            method: 'DELETE',
+            path: '/api/tasks/:id',
+            handler: 'deleteTask',
+            file: 'src/routes/tasks.ts',
+            line: 30,
+          },
+        ],
+        procedures: [
+          {
+            name: 'accept',
+            kind: 'mutation',
+            file: 'src/routers/task.ts',
+            line: 22,
+          },
+        ],
+        exports: [],
+      },
+      dependencies: { internal: [], external: [] },
+    });
+
+    const graph = makeGraph([backend]);
+    const config = makeConfig({ categories: ['security'] });
+
+    const suggestions = analyzeEvolution(graph, config);
+
+    const knownFiles = new Set(['src/routes/tasks.ts', 'src/routers/task.ts']);
+
+    const allEvidence = suggestions.flatMap((s) => s.evidence);
+    const evidenceWithFiles = allEvidence.filter((e) => e.file !== '');
+
+    for (const e of evidenceWithFiles) {
+      expect(knownFiles.has(e.file)).toBe(true);
+    }
+  });
+});

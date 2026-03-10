@@ -47,7 +47,7 @@ export function enrichGraphForConfig(
           `${bridge.consumer.repo}:${bridge.consumer.file}:${bridge.consumer.line}:${bridge.provider.repo}:${bridge.provider.route}`,
       ),
       contractMismatches: uniqueBy(
-        [...nextGraph.contractMismatches, ...bridgeAnalysis.mismatches],
+        [...bridgeAnalysis.mismatches, ...nextGraph.contractMismatches],
         (mismatch) =>
           `${mismatch.kind}:${mismatch.provider.repo}:${mismatch.provider.file}:${mismatch.provider.field}:${mismatch.consumer.repo}:${mismatch.consumer.file}:${mismatch.description}`,
       ),

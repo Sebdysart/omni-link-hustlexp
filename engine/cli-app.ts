@@ -3,6 +3,7 @@ import {
   authorityStatus,
   evolve,
   health,
+  impact,
   impactFromRefs,
   impactFromUncommitted,
   owners,
@@ -44,6 +45,7 @@ Options:
   --head <ref>            Head git ref for PR / branch-aware analysis
   --pr <number>           Pull request number for publish-review
   --head-sha <sha>        Explicit commit SHA for provider check publishing
+  --simulate <repo:file>  Simulate impact of changing a file (can be repeated)
   --once                  Run a single watch refresh and exit
   --help                  Show this help message
 
@@ -54,6 +56,7 @@ Examples:
   omni-link health --config /path/to/.omni-link.json
   omni-link evolve
   omni-link impact --base main --head HEAD
+  omni-link impact --simulate hustlexp-ai-backend:src/routers/task.ts
   omni-link watch --once
   omni-link review-pr --base main --head HEAD
   omni-link publish-review --pr 42 --base main --head HEAD
@@ -67,6 +70,7 @@ export interface CliArgs {
   headRef: string | undefined;
   prNumber: number | undefined;
   headSha: string | undefined;
+  simulate: string[];
   once: boolean;
   help: boolean;
 }
@@ -85,6 +89,7 @@ export interface CliDeps {
   owners: typeof owners;
   authorityStatus: typeof authorityStatus;
   publishReview: typeof publishReview;
+  impact: typeof impact;
   impactFromRefs: typeof impactFromRefs;
   impactFromUncommitted: typeof impactFromUncommitted;
   health: typeof health;
@@ -108,6 +113,7 @@ const DEFAULT_DEPS: CliDeps = {
   owners,
   authorityStatus,
   publishReview,
+  impact,
   impactFromRefs,
   impactFromUncommitted,
   health,
@@ -125,6 +131,7 @@ export function parseArgs(argv: string[]): CliArgs {
   let headRef: string | undefined;
   let prNumber: number | undefined;
   let headSha: string | undefined;
+  const simulate: string[] = [];
   let once = false;
   let help = false;
 
@@ -213,6 +220,21 @@ export function parseArgs(argv: string[]): CliArgs {
       continue;
     }
 
+    if (arg === '--simulate') {
+      const next = argv[i + 1];
+      if (!next) {
+        throw new Error('Missing value for --simulate');
+      }
+      if (!next.includes(':')) {
+        throw new Error(
+          '--simulate value must be in format repo:filepath (e.g., hustlexp-ai-backend:src/routers/task.ts)',
+        );
+      }
+      simulate.push(next);
+      i++;
+      continue;
+    }
+
     if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -225,7 +247,18 @@ export function parseArgs(argv: string[]): CliArgs {
     throw new Error(`Unexpected argument: ${arg}`);
   }
 
-  return { command, configPath, outputFormat, baseRef, headRef, prNumber, headSha, once, help };
+  return {
+    command,
+    configPath,
+    outputFormat,
+    baseRef,
+    headRef,
+    prNumber,
+    headSha,
+    simulate,
+    once,
+    help,
+  };
 }
 
 export function resolveCliConfig(
@@ -279,10 +312,22 @@ export async function runCli(
 
       case 'impact': {
         const config = resolveCliConfig(args.configPath, deps);
-        const result =
-          args.baseRef && args.headRef
-            ? await deps.impactFromRefs(config, args.baseRef, args.headRef)
-            : await deps.impactFromUncommitted(config);
+        let result;
+        if (args.simulate.length > 0) {
+          const changedFiles = args.simulate.map((entry) => {
+            const colonIdx = entry.indexOf(':');
+            return {
+              repo: entry.slice(0, colonIdx),
+              file: entry.slice(colonIdx + 1),
+              change: 'simulated',
+            };
+          });
+          result = await deps.impact(config, changedFiles);
+        } else if (args.baseRef && args.headRef) {
+          result = await deps.impactFromRefs(config, args.baseRef, args.headRef);
+        } else {
+          result = await deps.impactFromUncommitted(config);
+        }
         io.stdout(JSON.stringify(result, null, 2));
         return 0;
       }
