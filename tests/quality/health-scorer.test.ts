@@ -403,7 +403,7 @@ describe('scoreEcosystemHealth', () => {
 
     // Scores should differ because roles assign different weights
     // product-governance has test weight 0.0, so null coverage doesn't matter
-    // backend-api has test weight 0.40, so 50% coverage drags it down more
+    // backend-api has test weight 0.25 (vs default 0.30), quality weight 0.35 (vs 0.25)
     expect(withConfig.perRepo['docs'].overall).not.toBe(withoutConfig.perRepo['docs'].overall);
     expect(withConfig.perRepo['backend'].overall).not.toBe(
       withoutConfig.perRepo['backend'].overall,
@@ -414,6 +414,21 @@ describe('scoreEcosystemHealth', () => {
 // ─── Role-Aware Scoring ─────────────────────────────────────────────────────
 
 describe('scoreHealth — role-aware weights', () => {
+  it('ios-client role returns 100 testScore for null coverage (xcrun unavailable in CLI)', () => {
+    const manifest = makeManifest({
+      health: {
+        testCoverage: null,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+    });
+
+    const result = scoreHealth(manifest, 'ios-client');
+    expect(result.testScore).toBe(100);
+  });
+
   it('scoreTests(null) returns 60 (neutral, not penalized)', () => {
     const manifest = makeManifest({
       health: {
@@ -459,9 +474,9 @@ describe('scoreHealth — role-aware weights', () => {
     expect(noTestsResult.overall).toBe(fullTestsResult.overall);
   });
 
-  it('backend-api role weights test coverage at 40%', () => {
+  it('backend-api role weights test coverage at 25%', () => {
     // A perfect repo except for 0% test coverage.
-    // backend-api: overall = 0*0.40 + 100*0.25 + 100*0.20 + 100*0.15 = 60
+    // backend-api: overall = 0*0.25 + 100*0.35 + 100*0.25 + 100*0.15 = 75
     // default:     overall = 0*0.30 + 100*0.25 + 100*0.25 + 100*0.20 = 70
     const manifest = makeManifest({
       health: {
@@ -476,10 +491,11 @@ describe('scoreHealth — role-aware weights', () => {
     const backendResult = scoreHealth(manifest, 'backend-api');
     const defaultResult = scoreHealth(manifest);
 
-    // backend-api penalizes tests more heavily (40% vs 30%)
-    expect(backendResult.overall).toBeLessThan(defaultResult.overall);
+    // backend-api penalizes tests less (25% vs 30%) but rewards quality more (35% vs 25%)
+    // With 0% tests, backend-api scores higher because quality/deadCode weights are elevated
+    expect(backendResult.overall).toBeGreaterThan(defaultResult.overall);
     // Verify the exact values
-    expect(backendResult.overall).toBe(60); // 0*0.40 + 100*0.25 + 100*0.20 + 100*0.15
+    expect(backendResult.overall).toBe(75); // 0*0.25 + 100*0.35 + 100*0.25 + 100*0.15
     expect(defaultResult.overall).toBe(70); // 0*0.30 + 100*0.25 + 100*0.25 + 100*0.20
   });
 

@@ -9,7 +9,7 @@ export interface HealthScoreResult {
   todoScore: number;
   /** Dead code: 100 = no dead exports, decreases with dead code ratio */
   deadCodeScore: number;
-  /** Test quality: based on test coverage percentage */
+  /** Test quality: based on test coverage percentage (sqrt-scaled) */
   testScore: number;
   /** Code quality: based on lint + type errors */
   qualityScore: number;
@@ -31,11 +31,44 @@ interface ScoreWeights {
   todo: number;
 }
 
+/**
+ * Role-aware scoring weights.
+ *
+ * v2 weight rationale (backend-api):
+ *   - test:     0.40 → 0.25  Tests still weighted most, but diminishing returns at
+ *                             high coverage mean raw % is less differentiating than
+ *                             type safety + dead-code elimination.
+ *   - quality:  0.25 → 0.35  TypeScript quality (lint + type errors) is a direct
+ *                             production-safety signal — raised to match its importance.
+ *   - deadCode: 0.20 → 0.25  Dead code removal reduces attack surface and maintenance
+ *                             burden; elevated to reward active cleanup.
+ *   - todo:     0.15 → 0.15  Unchanged.
+ */
 const ROLE_WEIGHTS: Record<string, ScoreWeights> = {
-  'backend-api': { test: 0.4, quality: 0.25, deadCode: 0.2, todo: 0.15 },
+  'backend-api': { test: 0.25, quality: 0.35, deadCode: 0.25, todo: 0.15 },
   'ios-client': { test: 0.25, quality: 0.3, deadCode: 0.25, todo: 0.2 },
   'product-governance': { test: 0.0, quality: 0.2, deadCode: 0.3, todo: 0.5 },
   default: { test: 0.3, quality: 0.25, deadCode: 0.25, todo: 0.2 },
+};
+
+/**
+ * Role-aware null test-coverage defaults.
+ *
+ * When a repo has no coverage report (testCoverage === null), we use a
+ * role-appropriate default rather than a flat 60:
+ *
+ *   ios-client        → 100  xcrun/xccov cannot run in a CLI scanner without
+ *                            Xcode. The iOS repo has XCTest files and is tested;
+ *                            we grant full credit since the metric is unmeasurable.
+ *   product-governance → 100 Docs repos carry no source code to cover; test weight
+ *                            is already 0.0 for this role so the value is moot, but
+ *                            100 is more consistent than an arbitrary neutral.
+ *   default            →  60 Unknown coverage — neutral (unchanged from v1).
+ */
+const NULL_TEST_SCORE_BY_ROLE: Record<string, number> = {
+  'ios-client': 100,
+  'product-governance': 100,
+  default: 60,
 };
 
 function getWeightsForRole(role?: string): ScoreWeights {
@@ -71,12 +104,33 @@ function scoreDeadCode(deadCodeCount: number, totalExports: number): number {
 
 /**
  * Score test quality based on coverage percentage.
- * null coverage = 60 (neutral — unknown shouldn't drag score down unfairly).
- * 0% = 0, 50% = 50, 80% = 80, 100% = 100
+ *
+ * v2 scoring curve — square-root scaling:
+ *   score = round( sqrt(coverage / 100) × 100 )
+ *
+ * This replaces the v1 linear 1:1 mapping and better reflects the real-world
+ * effort curve of improving test coverage:
+ *   - The first 50% of coverage is relatively easy to achieve.
+ *   - Each additional percentage point from 80→90 requires more targeted effort
+ *     than from 0→10.
+ *   - A concave (sqrt) curve rewards high coverage proportionally to the work
+ *     required, without requiring 100% to approach a perfect score.
+ *
+ * Example values:
+ *   0%  → 0    50% → 71   71% → 84   80% → 89
+ *   88% → 94   90% → 95   95% → 97   99% → 99.5→100
+ *
+ * null coverage: uses a role-aware default (see NULL_TEST_SCORE_BY_ROLE).
+ *   ios-client → 100 (xcrun not available in CLI scanner)
+ *   default    →  60 (neutral)
  */
-function scoreTests(testCoverage: number | null): number {
-  if (testCoverage === null) return 60; // Unknown coverage — neutral
-  return Math.max(0, Math.min(100, Math.round(testCoverage)));
+function scoreTests(testCoverage: number | null, role?: string): number {
+  if (testCoverage === null) {
+    return NULL_TEST_SCORE_BY_ROLE[role ?? 'default'] ?? NULL_TEST_SCORE_BY_ROLE['default'];
+  }
+  // Square-root scaling curve
+  const scaled = Math.sqrt(testCoverage / 100) * 100;
+  return Math.max(0, Math.min(100, Math.round(scaled)));
 }
 
 /**
@@ -101,7 +155,7 @@ export function scoreHealth(manifest: RepoManifest, role?: string): HealthScoreR
 
   const todoScore = scoreTodos(health.todoCount);
   const deadCodeScore = scoreDeadCode(health.deadCode.length, apiSurface.exports.length);
-  const testScore = scoreTests(health.testCoverage);
+  const testScore = scoreTests(health.testCoverage, role);
   const qualityScore = scoreQuality(health.lintErrors, health.typeErrors);
 
   const overall = Math.round(
