@@ -64,7 +64,7 @@ staleness_hours = Math.floor((Date.now() - new Date(generatedAt)) / 3600000)
 ```bash
 cat /Users/sebastiandysart/Desktop/hustlexp-ai-backend/coverage/coverage-summary.json
 # If file missing or older than 24h:
-timeout 120s npx --prefix /Users/sebastiandysart/Desktop/hustlexp-ai-backend vitest run --coverage
+npx --prefix /Users/sebastiandysart/Desktop/hustlexp-ai-backend vitest run --coverage
 cat /Users/sebastiandysart/Desktop/hustlexp-ai-backend/coverage/coverage-summary.json
 ```
 
@@ -73,7 +73,7 @@ Parse: `total.lines.pct` → `coverage_percent`, `total.lines.covered/total` →
 **Step 3 — Drift + security_alert** (single CLI call)
 
 ```bash
-timeout 30s node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js authority-status
+node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js authority-status
 ```
 
 Parse: `payloadDrift` → `drift.count`, areas list → `drift.areas`, `contractStatus.mismatches.length > 0` → `extra.security_alert`.
@@ -81,7 +81,7 @@ Parse: `payloadDrift` → `drift.count`, areas list → `drift.areas`, `contract
 **Step 4 — Health**
 
 ```bash
-timeout 30s node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js health
+node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js health
 ```
 
 Parse: overall score → `health.current`, compute `health.delta = 95 - health.current`.
@@ -164,17 +164,17 @@ ALL CLEAR                   → EXIT-ASSESS-HAPPY → PHASE 3
 
 **Purpose:** One-to-one mapping of assessment exit to action plan. No new analysis.
 
-| Assessment Exit         | Exact Action Plan (in order)                                                                                                                                                                                                                                       | Next                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| **HAPPY**               | Standard boot — report state, proceed with user task                                                                                                                                                                                                               | PHASE 4                     |
-| **DIGEST-STALE**        | `timeout 30s node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js scan` → re-assemble snapshot                                                                                                                                                               | Re-enter PHASE 1            |
-| **TESTS-FAILING**       | 1. List failing test names 2. Invoke `superpowers:systematic-debugging` per failure 3. Apply fix 4. `timeout 120s npx vitest run` to verify                                                                                                                        | EXIT-DECIDE-TESTS-HOLD      |
-| **DRIFT-BLOCKING**      | 1. `timeout 30s node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js authority-status` 2. Surface real mismatch fields to human 3. Human confirms fix scope 4. Apply Swift/TS code fix                                                                       | Re-enter PHASE 2            |
-| **DRIFT-INFORMATIONAL** | Log: "PayloadDrift=N is irreducible type-repr floor. No action." Continue.                                                                                                                                                                                         | PHASE 4                     |
-| **HEALTH-CRITICAL-21**  | 1. `git -C /Users/sebastiandysart/Desktop/hustlexp-ai-backend log --oneline -8` 2. Output to human 3. Wait for human to supply stable SHA 4. `git -C /Users/sebastiandysart/Desktop/hustlexp-ai-backend reset --hard <HUMAN_SHA>` 5. `timeout 120s npx vitest run` | EXIT-DECIDE-HEALTH-ROLLBACK |
-| **HEALTH-MAJOR-11**     | 1. `timeout 30s node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js health` 2. Identify lowest-scoring repo 3. Invoke `omni-link:stabilize` skill 4. Re-assess after completion                                                                             | Re-enter PHASE 2            |
-| **HEALTH-MINOR-6**      | Invoke `omni-link:stabilize` skill → continue                                                                                                                                                                                                                      | PHASE 4                     |
-| **EXTRA-ALERT**         | Log security alert. Surface `contractStatus.mismatches` to human. Do not proceed until human clears.                                                                                                                                                               | EXIT-DECIDE-SAFE-MODE       |
+| Assessment Exit         | Exact Action Plan (in order)                                                                                                                                                                                                                          | Next                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| **HAPPY**               | Standard boot — report state, proceed with user task                                                                                                                                                                                                  | PHASE 4                     |
+| **DIGEST-STALE**        | `node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js scan` → re-assemble snapshot                                                                                                                                                              | Re-enter PHASE 1            |
+| **TESTS-FAILING**       | 1. List failing test names 2. Invoke `superpowers:systematic-debugging` per failure 3. Apply fix 4. `npx vitest run` to verify                                                                                                                        | EXIT-DECIDE-TESTS-HOLD      |
+| **DRIFT-BLOCKING**      | 1. `node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js authority-status` 2. Surface real mismatch fields to human 3. Human confirms fix scope 4. Apply Swift/TS code fix                                                                      | Re-enter PHASE 2            |
+| **DRIFT-INFORMATIONAL** | Log: "PayloadDrift=N is irreducible type-repr floor. No action." Continue.                                                                                                                                                                            | PHASE 4                     |
+| **HEALTH-CRITICAL-21**  | 1. `git -C /Users/sebastiandysart/Desktop/hustlexp-ai-backend log --oneline -8` 2. Output to human 3. Wait for human to supply stable SHA 4. `git -C /Users/sebastiandysart/Desktop/hustlexp-ai-backend reset --hard <HUMAN_SHA>` 5. `npx vitest run` | EXIT-DECIDE-HEALTH-ROLLBACK |
+| **HEALTH-MAJOR-11**     | 1. `node /Users/sebastiandysart/omni-link-hustlexp/dist/cli.js health` 2. Identify lowest-scoring repo 3. Invoke `omni-link:stabilize` skill 4. Re-assess after completion                                                                            | Re-enter PHASE 2            |
+| **HEALTH-MINOR-6**      | Invoke `omni-link:stabilize` skill → continue                                                                                                                                                                                                         | PHASE 4                     |
+| **EXTRA-ALERT**         | Log security alert. Surface `contractStatus.mismatches` to human. Do not proceed until human clears.                                                                                                                                                  | EXIT-DECIDE-SAFE-MODE       |
 
 ---
 
