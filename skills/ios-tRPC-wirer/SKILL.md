@@ -177,6 +177,18 @@ For data loading on screen appear, use `.task {}` modifier (auto-cancelled on di
 
 **File**: `Screens/Shared/DisputeScreen.swift`
 
+> **BACKEND PROCEDURE DOES NOT EXIST — TWO-STEP FIX REQUIRED**
+>
+> The `dispute` router is **NOT present** in `backend/src/routers/index.ts`. There is no `dispute.create` procedure. The only dispute-adjacent router is `disputeAI`, which is admin-only AI analysis (not a user-facing create endpoint).
+>
+> **This stub CANNOT be replaced with a real tRPC call until step 1 is complete.**
+>
+> **Step 1 — Backend (do this first):** Create `backend/src/routers/dispute.ts` with a `create` mutation that accepts `{ taskId: string, reason: string, description: string }` (or `task_id` snake_case — match whatever Zod schema you define), transitions the task to DISPUTED state, locks escrow, and inserts a dispute record. Register it in `backend/src/routers/index.ts` as `dispute: disputeRouter`.
+>
+> **Step 2 — iOS (only after Step 1 is deployed):** Replace the DispatchQueue stub below with a real `TRPCClient.shared.call(router: "dispute", procedure: "create", ...)` call.
+>
+> Do NOT wire the iOS side against a non-existent procedure — the call will fail at runtime with a 404/NOT_FOUND tRPC error and the fake success will no longer fire, breaking the screen entirely.
+
 **Current fake** (lines 73-85):
 
 ```swift
@@ -190,16 +202,17 @@ private func submitDispute() {
 }
 ```
 
-**Backend procedure**: `dispute.create` (mutation, protected auth)
-**Backend input** (from API_CONTRACT.md §dispute.create):
+**Target backend procedure (once implemented)**: `dispute.create` (mutation, protectedProcedure)
+**Suggested backend input shape** (define in `dispute.ts` Zod schema):
 
 ```typescript
 { task_id: string; reason: 'PROOF_INSUFFICIENT' | 'WORK_NOT_DONE' | 'QUALITY_ISSUE' | 'OTHER'; description: string; evidence_urls?: string[] }
 ```
 
-**Backend output**: `{ dispute: { id, task_id, opened_by, reason, state: 'OPEN', created_at }; task: { id, state: 'DISPUTED' }; escrow: { id, state: 'LOCKED_DISPUTE' } }`
+**Suggested backend output shape**:
+`{ dispute: { id, task_id, opened_by, reason, state: 'OPEN', created_at }; task: { id, state: 'DISPUTED' }; escrow: { id, state: 'LOCKED_DISPUTE' } }`
 
-**Fix — create a DisputeService or add directly to screen via ViewModel**:
+**iOS fix template (apply only after backend Step 1 is done)**:
 
 ```swift
 // 1. Define output types
@@ -266,7 +279,7 @@ private func submitDispute() {
 }
 ```
 
-**Why this is P0**: Fake success silently accepts disputes without creating a database record, locking escrow, or transitioning task state to DISPUTED. Financial invariants are violated on every submission.
+**Why this is P0**: Fake success silently accepts disputes without creating a database record, locking escrow, or transitioning task state to DISPUTED. Financial invariants are violated on every submission. The fix requires backend work before iOS wiring.
 
 ---
 
@@ -329,11 +342,18 @@ func getLeaderboard() async throws -> [HXSquad] {
 
 ---
 
-### Stub 3: ProofSubmissionViewModel.swift:280-284 → `biometric.submitBiometricProof`
+### Stub 3: ProofSubmissionViewModel.swift:280-284 and 310 → `biometric.submitBiometricProof`
 
 **File**: `ViewModels/ProofSubmissionViewModel.swift`
 
-**Current fake** (lines 280-284):
+**IMPORTANT — Two mock locations, both must be replaced:**
+
+- **Line 281**: mock call in the happy path after API success
+- **Line 310**: same mock call in the `catch` block as a fallback
+
+Both lines contain `dataService.validateBiometricProof(...)`. Replacing only the first (line 281) leaves a second mock still active in error recovery paths. Audit the file for both occurrences before committing.
+
+**Current fake** (lines 280-284 and ~310):
 
 ```swift
 let result = dataService.validateBiometricProof(submission: submission, taskId: taskId)
@@ -364,12 +384,14 @@ Note: This is a complex multi-field input with BIPA compliance requirements (bio
 
 ## How to Find the Matching Backend Procedure
 
-1. Open `backend/src/routers/` — each file is a router (e.g., `dispute.ts` → router name `"dispute"`)
+1. Open `backend/src/routers/` — each file is a router (e.g., `squad.ts` → router name `"squad"`)
 2. Find the tRPC procedure name (e.g., `create:`, `listTasks:`, `acceptTask:`)
 3. Check whether it is `.query(...)` or `.mutation(...)` to know the `type:` parameter
 4. Read the `.input(z.object({ ... }))` block for required field names and types
-5. The tRPC path = `router + "." + procedure` (e.g., `"dispute"` + `"create"` = `dispute.create`)
+5. The tRPC path = `router + "." + procedure` (e.g., `"squad"` + `"listTasks"` = `squad.listTasks`)
 6. The router name in iOS matches the key in `backend/src/routers/index.ts` export map
+
+**NOTE**: Always verify the router file exists before wiring iOS. The `dispute` router is a known example of a router that does NOT exist yet — see Stub 1 above. If a router file is absent from `index.ts`, the iOS call will fail at runtime.
 
 **Auth levels**: `protectedProcedure` = any logged-in user; `hustlerProcedure` = hustler role; `posterProcedure` = poster role; `adminProcedure` = admin only. The iOS auth token handles this automatically — just ensure `TRPCClient.shared.setAuthToken()` was called after Firebase sign-in.
 

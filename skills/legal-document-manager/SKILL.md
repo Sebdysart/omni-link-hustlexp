@@ -54,12 +54,17 @@ Document status: All 6 are bulletproofed as of 2026-03-15 (14 patches applied). 
 
 ### Fee Change Lookup Table
 
-| Code Location / Fee Type  | Current Value      | Legal Documents to Update            | Sections                |
-| ------------------------- | ------------------ | ------------------------------------ | ----------------------- |
-| Platform fee %            | 15%                | Hustler Agreement + Poster Agreement | Fee disclosure sections |
-| Tip platform cut %        | 0% → being changed | Hustler Agreement + Poster Agreement | Tip/gratuity disclosure |
-| Cancellation fee schedule | See Exhibit A      | Poster Agreement                     | Exhibit A + Section 4.4 |
-| Background check fee      | —                  | Background Check Consent             | Fee disclosure          |
+| Code Location / Fee Type                            | Current Value                                             | Legal Documents to Update            | Sections                |
+| --------------------------------------------------- | --------------------------------------------------------- | ------------------------------------ | ----------------------- |
+| Platform fee %                                      | 15%                                                       | Hustler Agreement + Poster Agreement | Fee disclosure sections |
+| Tip platform cut %                                  | 0% → being changed                                        | Hustler Agreement + Poster Agreement | Tip/gratuity disclosure |
+| Cancellation fee schedule                           | See Exhibit A                                             | Poster Agreement                     | Exhibit A + Section 4.4 |
+| Background check fee                                | —                                                         | Background Check Consent             | Fee disclosure          |
+| Featured listing — "promoted" price ($2.99/24h)     | Poster Agreement (fee schedule / Exhibit A)               | `backend/src/routers/featured.ts:18` |
+| Featured listing — "highlighted" price ($4.99/48h)  | Poster Agreement (fee schedule / Exhibit A)               | `backend/src/routers/featured.ts:19` |
+| Featured listing — "urgent_boost" price ($7.99/12h) | Poster Agreement (fee schedule / Exhibit A)               | `backend/src/routers/featured.ts:20` |
+| Subscription — Premium plan price ($14.99/mo)       | Poster Agreement + Hustler Agreement (subscription terms) | `backend/src/config.ts:37`           |
+| Subscription — Pro plan price ($29.99/mo)           | Poster Agreement + Hustler Agreement (subscription terms) | `backend/src/config.ts:43`           |
 
 ### When a Fee Changes — Full Workflow
 

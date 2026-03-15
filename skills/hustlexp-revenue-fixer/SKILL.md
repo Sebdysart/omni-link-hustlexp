@@ -18,15 +18,15 @@ description: Use when fixing HustleXP revenue collection bugs including Stripe p
 
 ### P0 Bug 1 — application_fee_amount never passed (HIGHEST URGENCY)
 
-**File**: `backend/src/services/StripeService.ts` line 162
+**File**: `backend/src/services/StripeService.ts` — line 162 is the fee calculation; the `stripe.paymentIntents.create(...)` call starts at line 164.
 **Problem**: Platform fee is stored in PaymentIntent metadata only. `application_fee_amount` is never passed to the Stripe API. Platform earns $0 in platform fees.
-**Fix**: Inside `stripe.paymentIntents.create(...)`, add:
+**Fix**: Inside the `stripe.paymentIntents.create(...)` params (lines 164–174), add:
 
 ```typescript
-application_fee_amount: Math.round(taskPrice * 0.15 * 100),
+application_fee_amount: Math.round(amount * (config.stripe.platformFeePercent / 100)),
 ```
 
-Note: 15% of task price, converted to cents (integer). Do NOT use dollars.
+Note: `amount` is already in cents. Fee percent comes from `config.stripe.platformFeePercent`. Do NOT use hardcoded `taskPrice * 0.15 * 100`.
 **Verification**: Stripe dashboard → Payments → filter by connected account → confirm platform fee shown on each charge.
 
 ---
@@ -44,13 +44,18 @@ Note: 15% of task price, converted to cents (integer). Do NOT use dollars.
 
 **File**: `backend/src/services/EscrowService.ts` — inside `release()` method
 **Problem**: `SelfInsurancePoolService.recordContribution()` exists but is never called. Pool is permanently $0.
-**Fix**: Add after every successful escrow release:
+**Fix**: Add after every successful escrow release. Actual signature: `recordContribution(taskId: string, hustlerId: string, contributionCents: number, contributionPercentage?: number)`. Contribution rate is 2%:
 
 ```typescript
-await SelfInsurancePoolService.recordContribution(escrowId, contributionAmount);
+const insuranceContributionCents = Math.round(grossPayoutCents * 0.02);
+await SelfInsurancePoolService.recordContribution(
+  escrow.task_id,
+  workerId,
+  insuranceContributionCents,
+);
 ```
 
-**Verification**: Check `self_insurance_pool` table after a test escrow release — row must appear.
+**Verification**: Check `insurance_contributions` table after a test escrow release — row must appear.
 
 ---
 
@@ -69,15 +74,16 @@ await SelfInsurancePoolService.recordContribution(escrowId, contributionAmount);
 
 ### P1 Bug 5 — Subscription renewal revenue not logged
 
-**Problem**: The `invoice.payment_succeeded` Stripe webhook is not wired for recurring subscriptions. Only month-1 revenue is logged; all renewal revenue is silently lost.
-**Fix**: Wire a handler for the `invoice.payment_succeeded` event in the Stripe webhook router.
+**File**: `backend/src/jobs/stripe-event-worker.ts`
+**Problem**: The `invoice.paid` Stripe webhook event is not handled for recurring subscriptions. Only month-1 revenue is logged; all renewal revenue is silently lost. The switch in `stripe-event-worker.ts` handles `invoice.payment_failed` but NOT `invoice.paid`.
+**Fix**: Add a `case 'invoice.paid':` handler in `backend/src/jobs/stripe-event-worker.ts` to log renewal revenue.
 **Verification**: Trigger a test subscription renewal via Stripe CLI and confirm revenue row is created.
 
 ---
 
 ### P1 Bug 6 — XP tax path unreachable
 
-**File**: `backend/src/services/EscrowService.ts` line 436
+**File**: `backend/src/services/EscrowService.ts` line 336
 **Problem**: `paymentMethod` is hardcoded to `'escrow'`, making the XP tax branch unreachable for any other payment method.
 **Fix**: Derive `paymentMethod` from task metadata instead of hardcoding.
 
@@ -89,8 +95,8 @@ await SelfInsurancePoolService.recordContribution(escrowId, contributionAmount);
 2. EscrowService.ts:337 — `escrow.amount` vs `task.price` (P0, understand escrow model first)
 3. EscrowService.ts release() — self-insurance pool call (additive, low risk)
 4. TippingService.ts:98 — tip platform cut + legal docs (requires legal-document-manager skill)
-5. Stripe webhook router — wire `invoice.payment_succeeded`
-6. EscrowService.ts:436 — XP tax path
+5. `stripe-event-worker.ts` — add `case 'invoice.paid':` handler
+6. EscrowService.ts:336 — XP tax path (`paymentMethod` hardcoded)
 
 ---
 
@@ -111,4 +117,9 @@ Must show: **0 failures** and **coverage ≥ 88.88%** (backend testScore thresho
 - StripeService: `backend/src/services/StripeService.ts`
 - EscrowService: `backend/src/services/EscrowService.ts`
 - TippingService: `backend/src/services/TippingService.ts`
-- Stripe webhook router: `backend/src/routers/` (search for `invoice.payment_succeeded`)
+
+## Key File Locations
+
+- Stripe webhook ingestion: `backend/src/services/StripeWebhookService.ts`
+- Stripe event dispatcher: `backend/src/jobs/stripe-event-worker.ts` (add new handlers here)
+- SelfInsurancePoolService: `backend/src/services/SelfInsurancePoolService.ts` (2% contribution rate)

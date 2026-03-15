@@ -39,11 +39,13 @@ return { items, nextCursor }       // ❌ WRONG — this shape does not exist
 ### CORRECT — Return shape:
 
 ```typescript
-// ALL paginated list procedures return exactly this shape:
+// All OFFSET-BASED paginated procedures return exactly this shape:
 return { collection, total };
 // collection: T[]  — the page of items
 // total: number    — count of ALL matching records (for client-side pagination UI)
 ```
+
+**Exception:** `task.listByPoster` and `task.listByWorker` use cursor-based pagination — see "Cursor-Based Procedures" section below.
 
 ---
 
@@ -53,11 +55,23 @@ During the March 2026 coverage sprint, ALL 15 AI-generated test files had cursor
 
 ---
 
+## Cursor-Based Procedures (Do NOT convert to offset)
+
+`task.listByPoster` (task.ts:81) and `task.listByWorker` (task.ts:120) use `Schemas.cursorPagination`:
+
+- Input: `{ cursor?: string, limit: number }`
+- Return: `{ tasks: Task[], nextCursor: string | undefined }`
+- `Schemas.cursorPagination` is defined in `trpc.ts` and uses cursor + limit (no offset)
+
+DO NOT convert these to offset-based `{ collection, total }`. These procedures have a BREAKING CHANGE comment from 2026-03-02 documenting their cursor shape. Any change requires updating iOS `TaskService` callers.
+
+---
+
 ## Backend Implementation
 
 ### Step 1: Locate the procedure
 
-The 14 highest-priority unbounded procedures (from omni-link evolution audit):
+The 12 highest-priority unbounded procedures needing offset pagination (from omni-link evolution audit):
 
 | Procedure                       | File                                   | Line |
 | ------------------------------- | -------------------------------------- | ---- |
@@ -70,11 +84,11 @@ The 14 highest-priority unbounded procedures (from omni-link evolution audit):
 | `squad.listMine`                | `backend/src/routers/squad.ts`         | 158  |
 | `squad.listInvites`             | `backend/src/routers/squad.ts`         | 384  |
 | `squad.listTasks`               | `backend/src/routers/squad.ts`         | 550  |
-| `task.listByPoster`             | `backend/src/routers/task.ts`          | 81   |
-| `task.listByWorker`             | `backend/src/routers/task.ts`          | 120  |
 | `task.listOpen`                 | `backend/src/routers/task.ts`          | 153  |
 | `task.listApplicants`           | `backend/src/routers/task.ts`          | 564  |
 | `taskDiscovery.search`          | `backend/src/routers/taskDiscovery.ts` | 324  |
+
+**Note:** `task.listByPoster` (task.ts:81) and `task.listByWorker` (task.ts:120) are intentionally excluded — they already use cursor-based pagination and must NOT be converted. See "Cursor-Based Procedures" section below.
 
 ### Step 2: Determine the query layer
 
@@ -313,4 +327,4 @@ Must confirm:
 
 5. **Do not use `Math.min(input.limit ?? 50, 100)` inline** — the Zod schema `.min(1).max(100)` already enforces the cap. Just use `input.limit` directly after Zod validation.
 
-6. **Do not use `.optional()` on `limit` and `offset`** — they have `.default()` values, so they are always present after Zod parsing. Using `.optional()` forces null-coalescing throughout the handler unnecessarily.
+6. **When adding NEW pagination, do not use `.optional()` on `limit` and `offset`** — use `.default(20)` and `.default(0)` instead, so they are always present after Zod parsing and no null-coalescing is needed throughout the handler. (`squad.listTasks` is a legacy exception that predates this rule and uses `.optional()` with `?? 50` fallbacks.)

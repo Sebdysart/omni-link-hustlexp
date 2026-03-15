@@ -1,6 +1,6 @@
 ---
 name: hustlexp-tdd
-description: 'Use when implementing any feature or fix in HustleXP backend, before writing implementation code — enforces 88.88% coverage floor and correct mock/pagination patterns'
+description: 'Use when implementing any feature or fix in HustleXP backend, before writing implementation code — enforces 90.49% coverage (floor: 88.88%) and correct mock/pagination patterns'
 ---
 
 # HustleXP TDD Discipline Guide
@@ -11,7 +11,7 @@ description: 'Use when implementing any feature or fix in HustleXP backend, befo
 
 ## Why This Matters
 
-The backend ecosystem health is 100/100. It got there by reaching 88.88% line coverage in March 2026. Dropping below that threshold cascades:
+The backend ecosystem health is 100/100. It got there by reaching 88.88% line coverage in March 2026 and has since improved to 90.49%. Dropping below the floor threshold cascades:
 
 ```
 Coverage < 88.88%
@@ -21,7 +21,7 @@ Coverage < 88.88%
 → orbit config flags HEALTH-CRITICAL
 ```
 
-**88.88% is a hard floor. Non-negotiable. Never merge code that drops coverage below it.**
+**Current: ~90.5% | Minimum floor: 88.88% — do not drop below this.**
 
 ---
 
@@ -63,7 +63,7 @@ cd /Users/sebastiandysart/Desktop/hustlexp-ai-backend
 npx vitest run --coverage 2>&1 | grep -E "Coverage|Lines|Statements|Branches|Functions|Tests|failed"
 ```
 
-The Lines coverage reported must be ≥ 88.88%. If it is not, add more tests before committing.
+The Lines coverage reported must be ≥ 88.88% (current: ~90.5%). If it is not, add more tests before committing.
 
 Full suite health check:
 
@@ -79,24 +79,34 @@ npx vitest run 2>&1 | tail -5
 
 Use this exact structure. Do not improvise.
 
+**This codebase has NO Prisma. Never mock `../../src/lib/prisma` — it does not exist.**
+
 ```typescript
 // AT TOP OF FILE — before any describe blocks
-vi.mock('../../src/lib/prisma', () => ({
-  prisma: {
-    escrow: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-      create: vi.fn(),
-    },
-    // Only mock the models your service actually touches
+
+// Database — mock the db module (raw pg, NOT Prisma)
+vi.mock('../../src/db', () => ({
+  db: {
+    query: vi.fn(),
+    transaction: vi.fn(),
   },
+  isInvariantViolation: vi.fn(() => false),
+  isUniqueViolation: vi.fn(() => false),
+  getErrorMessage: vi.fn((code: string) => `Error: ${code}`),
 }));
 
-vi.mock('../../src/lib/redis', () => ({
-  redis: {
+// Redis — mock the npm package, not a local file
+vi.mock('@upstash/redis', () => ({
+  Redis: vi.fn().mockImplementation(() => ({
     get: vi.fn(),
     set: vi.fn(),
-  },
+    del: vi.fn(),
+  })),
+}));
+
+// Logger — commonly mocked
+vi.mock('../../src/logger', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
 // IN beforeEach — ALWAYS reset mock call history
@@ -161,6 +171,10 @@ These paths are intentionally excluded from coverage measurement in `vitest.conf
 
 - `server.ts` — startup/infra, not unit-testable
 - `backend/src/test/**` — test helpers don't count toward coverage
+- `backend/src/**/*.d.ts` — TypeScript declaration files, no runtime code
+- `backend/src/**/index.ts` — barrel re-export files, no logic to test
+- `backend/src/types.ts` — type definitions only, no runtime code
+- `backend/src/jobs/**` — background jobs, excluded from unit coverage
 
 Do not add new exclusions without explicit approval. Every exclusion is a coverage debt.
 
@@ -176,19 +190,22 @@ Concrete walkthrough for "calculate and store worker reputation delta on task re
 // backend/tests/unit/escrow-service.test.ts (add to existing file or create new)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../src/lib/prisma', () => ({
-  prisma: {
-    escrow: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-    },
-    workerReputation: {
-      upsert: vi.fn(),
-    },
+// Database — mock the db module (raw pg, NOT Prisma)
+vi.mock('../../src/db', () => ({
+  db: {
+    query: vi.fn(),
+    transaction: vi.fn(),
   },
+  isInvariantViolation: vi.fn(() => false),
+  isUniqueViolation: vi.fn(() => false),
+  getErrorMessage: vi.fn((code: string) => `Error: ${code}`),
 }));
 
-import { prisma } from '../../src/lib/prisma';
+vi.mock('../../src/logger', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
+
+import { db } from '../../src/db';
 import { EscrowService } from '../../src/services/escrow-service';
 
 describe('EscrowService.releaseWithReputationDelta', () => {
@@ -205,20 +222,13 @@ describe('EscrowService.releaseWithReputationDelta', () => {
       status: 'FUNDED',
     };
 
-    vi.mocked(prisma.escrow.findUnique).mockResolvedValueOnce(mockEscrow);
-    vi.mocked(prisma.escrow.update).mockResolvedValueOnce({ ...mockEscrow, status: 'RELEASED' });
-    vi.mocked(prisma.workerReputation.upsert).mockResolvedValueOnce({
-      workerId: 'worker-1',
-      delta: 10,
-    });
+    vi.mocked(db.query)
+      .mockResolvedValueOnce({ rows: [mockEscrow], rowCount: 1 }) // findUnique equivalent
+      .mockResolvedValueOnce({ rows: [{ ...mockEscrow, status: 'RELEASED' }], rowCount: 1 }); // update equivalent
 
     const result = await EscrowService.release('escrow-1', { rating: 5 });
 
-    expect(prisma.workerReputation.upsert).toHaveBeenCalledWith({
-      where: { workerId: 'worker-1' },
-      create: expect.objectContaining({ workerId: 'worker-1', delta: expect.any(Number) }),
-      update: expect.objectContaining({ delta: expect.any(Number) }),
-    });
+    expect(db.query).toHaveBeenCalled();
     expect(result.reputationDelta).toBeGreaterThan(0);
   });
 });
@@ -235,7 +245,7 @@ Now open `src/services/escrow-service.ts` and add the minimal code to make the t
 ```bash
 cd /Users/sebastiandysart/Desktop/hustlexp-ai-backend
 npx vitest run --coverage 2>&1 | grep -E "Lines|failed"
-# Lines must be ≥ 88.88%
+# Lines must be ≥ 88.88% (current: ~90.5%)
 # failed must be 0
 ```
 
@@ -247,7 +257,7 @@ If you catch yourself doing any of these, stop and return to step 1:
 
 - Writing implementation code before a test file exists
 - Saying "I'll add tests after"
-- Running coverage and seeing Lines < 88.88% and committing anyway
+- Running coverage and seeing Lines < 88.88% (floor) and committing anyway
 - Writing `expect(result.items)` or `expect(result.nextCursor)` (cursor shape — wrong)
 - Using `vi.resetAllMocks()` in `beforeEach`
 - Not calling `vi.clearAllMocks()` in `beforeEach` at all (state pollution between tests)
@@ -260,12 +270,14 @@ If you catch yourself doing any of these, stop and return to step 1:
 ```
 testScore = round(sqrt(coverage / 100) * 100)
 
-At 88.88% lines:  testScore = round(sqrt(0.8888) * 100) = round(94.28) = 94
+At 90.49% lines:  testScore = round(sqrt(0.9049) * 100) = round(95.13) = 95  ← current
+At 88.88% lines:  testScore = round(sqrt(0.8888) * 100) = round(94.28) = 94  ← floor
 At 80.00% lines:  testScore = round(sqrt(0.80)   * 100) = round(89.44) = 89
 At 70.00% lines:  testScore = round(sqrt(0.70)   * 100) = round(83.67) = 84
 
 backend overall = round(todo*0.15 + dead*0.25 + test*0.25 + quality*0.35)
 ecosystem       = round(average of backend + iOS + docs scores)
 
-Maintain testScore ≥ 94 to keep ecosystem at 100/100.
+Maintain testScore ≥ 94 (floor: 88.88% coverage) to keep ecosystem at 100/100.
+Current coverage ~90.5% puts testScore at 95 — do not regress below the 88.88% floor.
 ```

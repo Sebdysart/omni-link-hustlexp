@@ -49,19 +49,21 @@ Stripe → POST /webhooks/stripe (server.ts)
 
 **What IS wired vs. what IS NOT:**
 
-| Event                           | Status      | Where handled                                       |
-| ------------------------------- | ----------- | --------------------------------------------------- |
-| `customer.subscription.created` | WIRED       | `processSubscriptionEvent()`                        |
-| `customer.subscription.updated` | WIRED       | `processSubscriptionEvent()`                        |
-| `customer.subscription.deleted` | WIRED       | `processSubscriptionEvent()`                        |
-| `checkout.session.completed`    | WIRED       | `handleCheckoutSessionCompleted()`                  |
-| `payment_intent.succeeded`      | WIRED       | `processEntitlementPurchase()` (per-task only)      |
-| `invoice.payment_failed`        | WIRED       | `handleInvoicePaymentFailed()` — grace period logic |
-| `account.updated`               | WIRED       | `handleAccountUpdated()` — KYC sync                 |
-| **`invoice.payment_succeeded`** | **MISSING** | **Nothing — P1 revenue gap**                        |
-| `payout.paid`                   | MISSING     | Unhandled event type (logged as skipped)            |
-| `payout.failed`                 | MISSING     | Silent failure — Hustlers not notified              |
-| `charge.dispute.created`        | MISSING     | Stripe chargeback — escrow not frozen               |
+| Event                           | Status                    | Where handled                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `customer.subscription.created` | WIRED                     | `processSubscriptionEvent()`                                                                                                                                                                                                   |
+| `customer.subscription.updated` | WIRED                     | `processSubscriptionEvent()`                                                                                                                                                                                                   |
+| `customer.subscription.deleted` | WIRED                     | `processSubscriptionEvent()`                                                                                                                                                                                                   |
+| `checkout.session.completed`    | WIRED                     | `handleCheckoutSessionCompleted()`                                                                                                                                                                                             |
+| `payment_intent.succeeded`      | WIRED                     | `processEntitlementPurchase()` (per-task only)                                                                                                                                                                                 |
+| `invoice.payment_failed`        | WIRED                     | `handleInvoicePaymentFailed()` — grace period logic                                                                                                                                                                            |
+| `account.updated`               | WIRED                     | `handleAccountUpdated()` — KYC sync                                                                                                                                                                                            |
+| **`invoice.payment_succeeded`** | **MISSING**               | **Nothing — P1 revenue gap**                                                                                                                                                                                                   |
+| `payout.paid`                   | MISSING                   | Unhandled event type (logged as skipped)                                                                                                                                                                                       |
+| `payout.failed`                 | MISSING                   | Silent failure — Hustlers not notified                                                                                                                                                                                         |
+| `charge.dispute.created`        | SERVICE EXISTS, NOT WIRED | `ChargebackService.handleDisputeCreated()` fully implemented at `backend/src/services/ChargebackService.ts` — only 3 `case` entries missing from `stripe-event-worker.ts` switch. Quick wiring fix, not a full implementation. |
+| `charge.dispute.updated`        | SERVICE EXISTS, NOT WIRED | `ChargebackService.handleDisputeUpdated()` fully implemented at `backend/src/services/ChargebackService.ts` — only 3 `case` entries missing from `stripe-event-worker.ts` switch. Quick wiring fix, not a full implementation. |
+| `charge.dispute.closed`         | SERVICE EXISTS, NOT WIRED | `ChargebackService.handleDisputeClosed()` fully implemented at `backend/src/services/ChargebackService.ts` — only 3 `case` entries missing from `stripe-event-worker.ts` switch. Quick wiring fix, not a full implementation.  |
 
 ---
 
@@ -123,7 +125,7 @@ async function handleInvoicePaymentSucceeded(
   // RevenueService.logEvent does NOT have its own dedup — rely on the stripe_events
   // claim gate in processStripeEventJob (claimed_at IS NULL) preventing double-fire.
   const { RevenueService } = await import('../services/RevenueService.js');
-  await RevenueService.logEvent({
+  const result = await RevenueService.logEvent({
     eventType: 'subscription',
     userId,
     amountCents: amountPaid,
@@ -131,12 +133,18 @@ async function handleInvoicePaymentSucceeded(
     stripeSubscriptionId: subscriptionId,
     metadata: { billingReason, invoiceId: invoice.id },
   });
+  if (!result.success) {
+    logger.error('[stripe-event-worker] Failed to log subscription renewal', { error: result.error });
+    // Don't throw — return skipped or partial to avoid Stripe retries on non-retriable errors
+  }
 
   log.info(
     { userId, amountPaid, subscriptionId, stripeEventId },
     'Subscription renewal revenue logged',
   );
 }
+
+> **Note:** `RevenueService.logEvent()` returns `ServiceResult<{id: string}>` (it does NOT throw). Always check `.success` before assuming the write landed. Do NOT `await` it without capturing the result.
 ```
 
 ---
@@ -214,7 +222,7 @@ Missing cases (check before adding — confirm still absent):
 - `invoice.payment_succeeded` — P1 revenue bug
 - `payout.paid` — Hustler payout confirmation
 - `payout.failed` — Hustler payout failure (silent today)
-- `charge.dispute.created` — Stripe chargeback filing
+- `charge.dispute.created` / `charge.dispute.updated` / `charge.dispute.closed` — SERVICE EXISTS, NOT WIRED. `ChargebackService.handleDisputeCreated/Updated/Closed()` fully implemented at `backend/src/services/ChargebackService.ts`. Only 3 `case` entries missing from `stripe-event-worker.ts` switch. This is a quick wiring fix, not a full implementation.
 
 ---
 

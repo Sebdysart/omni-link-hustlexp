@@ -7,7 +7,7 @@ description: Use when building new SwiftUI screens for HustleXP iOS, adding navi
 
 ## TL;DR Checklist for Every New Screen
 
-1. Create `{FeatureName}ViewModel.swift` — `@Observable final class`, uses `TRPCClient.shared`
+1. Create `{FeatureName}ViewModel.swift` — `@Observable @MainActor final class`, uses `TRPCClient.shared`
 2. Create `{FeatureName}Screen.swift` — `struct`, holds `@State private var viewModel = {FeatureName}ViewModel()`
 3. Add a case to the correct route enum in `Router.swift`
 4. Register the case in the correct `*Stack.swift` `.navigationDestination` switch
@@ -16,13 +16,16 @@ description: Use when building new SwiftUI screens for HustleXP iOS, adding navi
 
 ## File Locations
 
-| Screen type         | File path                                                      |
-| ------------------- | -------------------------------------------------------------- |
-| Hustler-facing      | `hustleXP final1/Screens/Hustler/{FeatureName}Screen.swift`    |
-| Hustler ViewModel   | `hustleXP final1/Screens/Hustler/{FeatureName}ViewModel.swift` |
-| Poster-facing       | `hustleXP final1/Screens/Poster/{FeatureName}Screen.swift`     |
-| Poster ViewModel    | `hustleXP final1/Screens/Poster/{FeatureName}ViewModel.swift`  |
-| Shared (both roles) | `hustleXP final1/Screens/Shared/{FeatureName}Screen.swift`     |
+| Screen type         | File path                                                   |
+| ------------------- | ----------------------------------------------------------- |
+| Hustler-facing      | `hustleXP final1/Screens/Hustler/{FeatureName}Screen.swift` |
+| Hustler ViewModel   | `hustleXP final1/ViewModels/{FeatureName}ViewModel.swift`   |
+| Poster-facing       | `hustleXP final1/Screens/Poster/{FeatureName}Screen.swift`  |
+| Poster ViewModel    | `hustleXP final1/ViewModels/{FeatureName}ViewModel.swift`   |
+| Shared (both roles) | `hustleXP final1/Screens/Shared/{FeatureName}Screen.swift`  |
+| Shared ViewModel    | `hustleXP final1/ViewModels/{FeatureName}ViewModel.swift`   |
+
+ViewModels are NOT co-located with Screens. They live in the separate `ViewModels/` directory at the project root alongside `Screens/`.
 
 All paths are relative to: `/Users/sebastiandysart/HustleXP/HUSTLEXPFINAL1/hustleXP final1/`
 
@@ -50,12 +53,12 @@ Mutations (write): `type: .mutation` (default, can be omitted)
 
 ## Canonical ViewModel Pattern
 
-ViewModels use `@Observable` (not `ObservableObject`/`@Published`). All state vars are plain `var`.
+ViewModels use `@Observable @MainActor` (not `ObservableObject`/`@Published`). All state vars are plain `var`.
 
 ```swift
 import Foundation
 
-@Observable
+@Observable @MainActor
 final class JuryVotingViewModel {
     var isLoading = false
     var errorMessage: String?
@@ -106,7 +109,7 @@ final class JuryVotingViewModel {
 
 Key rules:
 
-- Catch `APIError` first (has `.userFacingMessage`), then generic `Error`
+- Catching `APIError` first (has `.userFacingMessage`) is **recommended** for new screens, but note that many existing ViewModels use plain `catch { error.localizedDescription }` without a typed `APIError` clause — both patterns compile and work
 - Define inline `Input` structs as `Encodable` inside the function — keeps the ViewModel self-contained
 - If types already exist in a Service file (e.g. `JuryService.swift`), import/reuse them instead of redefining
 - `isLoading = true` + `defer { isLoading = false }` on every async func
@@ -227,6 +230,8 @@ case .juryVoting(let disputeId):
     JuryVotingScreen(disputeId: disputeId)
 ```
 
+> **WARNING — SharedRoute registration**: `SharedRoute` is defined in `Router.swift` but currently has ZERO `.navigationDestination` registrations anywhere in the codebase. If you add a new `SharedRoute` case, you **must** manually add `.navigationDestination(for: SharedRoute.self)` to **both** `HustlerStack.swift` **and** `PosterStack.swift`. Without this, navigation will silently do nothing — no crash, no error, the push simply never fires.
+
 ---
 
 ## Reusing Existing Service Types
@@ -251,7 +256,7 @@ When a service already exists, you can call it directly from the ViewModel OR ca
 ### Recipe 1: Jury Voting Screen
 
 - **Path**: `Screens/Shared/JuryVotingScreen.swift`
-- **ViewModel**: `Screens/Shared/JuryVotingViewModel.swift`
+- **ViewModel**: `ViewModels/JuryVotingViewModel.swift`
 - **Backend calls**:
   - `router: "jury", procedure: "getVoteTally", type: .query` → `VoteTally`
   - `router: "jury", procedure: "submitVote", type: .mutation` → `VoteResult`
@@ -263,7 +268,7 @@ When a service already exists, you can call it directly from the ViewModel OR ca
 ### Recipe 2: Daily Challenges Screen (Hustler)
 
 - **Path**: `Screens/Hustler/DailyChallengesScreen.swift`
-- **ViewModel**: `Screens/Hustler/DailyChallengesViewModel.swift`
+- **ViewModel**: `ViewModels/DailyChallengesViewModel.swift`
 - **Backend calls**:
   - `router: "challenges", procedure: "getTodaysChallenges", type: .query` → `[DailyChallengeService.DailyChallenge]`
 - **Input**: none — use `struct EmptyInput: Encodable {}` as input
@@ -274,7 +279,7 @@ When a service already exists, you can call it directly from the ViewModel OR ca
 ### Recipe 3: Featured Listing Screen (Poster)
 
 - **Path**: `Screens/Poster/FeaturedListingScreen.swift`
-- **ViewModel**: `Screens/Poster/FeaturedListingViewModel.swift`
+- **ViewModel**: `ViewModels/FeaturedListingViewModel.swift`
 - **Backend calls**:
   - `router: "featured", procedure: "promoteTask"` → `{ clientSecret: String, listingId: String? }` (returns Stripe clientSecret for payment)
   - `router: "featured", procedure: "confirmPromotion"` → after Stripe payment succeeds
@@ -309,7 +314,7 @@ Never hardcode backend URLs. `TRPCClient` reads from `AppConfig.backendBaseURL` 
 | `Color.successGreen`    | Success states                            |
 | `Color.moneyGreen`      | Monetary values                           |
 
-Components: `HXButton`, `HXText`, `HXIcon`, `HXAvatar`, `HXInput` (from `Components/Atoms/`), `EmptyState`, `LoadingState`, `ErrorState` (from `Components/Molecules/`).
+Components: `HXButton`, `HXText`, `HXIcon`, `HXAvatar`, `HXInput` (from `Components/Atoms/`), `EmptyState`, `LoadingState` (from `Components/Molecules/`).
 
 ---
 
@@ -330,6 +335,6 @@ A clean build produces `** BUILD SUCCEEDED **` with zero `error:` lines.
 1. **Wrong TRPCClient signature** — do NOT use `procedure: "jury.submitVote"`. Always pass `router:` and `procedure:` as separate params.
 2. **Wrong navigation registration location** — routes go in `*Stack.swift` `.navigationDestination`, NOT inline in `Router.swift`.
 3. **Wrong route enum** — Hustler screens → `HustlerRoute`, Poster screens → `PosterRoute`, both-role screens → add to both or use `SharedRoute` embedded in both stacks.
-4. **ObservableObject instead of @Observable** — ViewModels use `@Observable final class`, not `class ... : ObservableObject`. State vars are plain `var`, not `@Published var`.
+4. **ObservableObject instead of @Observable** — ViewModels use `@Observable @MainActor final class`, not `class ... : ObservableObject`. State vars are plain `var`, not `@Published var`.
 5. **Hardcoded backend URL** — use `TRPCClient.shared` which reads `AppConfig.backendBaseURL` automatically.
 6. **Redefining existing types** — check `Services/` for existing models before creating new ones. `JuryVote`, `VoteTally`, `DailyChallenge` etc. already exist.

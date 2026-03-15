@@ -17,6 +17,7 @@ Valid transitions only. Any other transition is illegal and must throw.
 
 ```
 PENDING       → FUNDED         (Stripe PaymentIntent confirmed)
+PENDING       → REFUNDED       (task cancelled before funding completes)
 FUNDED        → RELEASED       (task completed + poster approved)
 FUNDED        → REFUNDED       (task cancelled or poster wins dispute)
 FUNDED        → LOCKED_DISPUTE (dispute filed by either party)
@@ -27,7 +28,7 @@ LOCKED_DISPUTE → REFUND_PARTIAL (split resolution)
 
 Terminal states — no further transitions ever: `RELEASED`, `REFUNDED`, `REFUND_PARTIAL`
 
-**There is no such thing as PENDING → RELEASED, PENDING → REFUNDED (direct), or any path that skips FUNDED.**
+**There is no such thing as PENDING → RELEASED or any path that skips FUNDED to reach RELEASED. PENDING → REFUNDED is valid when a task is cancelled before funding completes.**
 
 ---
 
@@ -56,9 +57,13 @@ Platform fee must be: `Math.round(escrow.amount * 0.15 * 100)` — 15% of the **
 - Never omitted from the Stripe transfer/payout call
 - Config: `config.stripe.platformFeePercent` (default 15)
 
+**Current code bug (P0)**: `EscrowService.ts` line 337 uses `grossPayoutCents = task.price` instead of `escrow.amount`. This is a known P0 bug. The escrow-state-guard exists in part to prevent regression and to prevent new code from repeating this mistake.
+
 ### INV-4: Surge correctness
 
 `escrow.amount` = `task.price` + `surge_premium`. Always use `escrow.amount` for fee calculations, never `task.price` alone. Surge premium must flow into the platform cut.
+
+**Watch for the P0 bug pattern**: The current code at `EscrowService.ts` line 337 uses `task.price` as the fee base — this is the bug. Any NEW code must use `escrow.amount`. When reviewing fee-touching code, confirm it is NOT using `task.price` as the fee base. Do not introduce additional instances of `task.price` as a fee base anywhere in the escrow subsystem.
 
 ---
 
@@ -168,6 +173,9 @@ After making any change:
    npx vitest run backend/tests/unit/escrow-service.test.ts
    npx vitest run backend/tests/unit/escrow-service-branches.test.ts
    npx vitest run backend/tests/unit/escrow-router.test.ts
+   npx vitest run backend/tests/unit/repositories-escrow.test.ts
+   npx vitest run backend/tests/integration/routers/escrow-router.test.ts
+   npx vitest run backend/tests/integration/stripe-escrow-e2e.test.ts
    ```
 
 2. Run full suite:
@@ -190,3 +198,9 @@ After making any change:
 - **Surge premium bug class**: Calculating fees on `task.price` instead of `escrow.amount` causes platform undercut when surge is active — real revenue loss.
 - **State machine integrity**: Double-release is prevented by a PostgreSQL trigger (`prevent_double_release`), but invalid transitions cause undefined behavior upstream.
 - **payloadDrift floor**: 11 irreducible type-repr differences between Swift and TypeScript exist in this subsystem. Do not attempt to "fix" them by changing escrow field names or types — they are structural and documented.
+
+---
+
+## Note on INV Numbering
+
+This skill uses a domain-specific INV numbering (INV-1 through INV-4) for escrow invariants. The project's CLAUDE.md uses a different INV numbering for system-wide invariants. These are separate namespaces.

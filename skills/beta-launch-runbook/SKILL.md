@@ -79,7 +79,7 @@ These do not block financial transactions but will cause user-facing failures vi
 
 - [ ] Remove squad stubs in `SquadService.swift` lines 151–171 — `getSquadTasks()`, `acceptSquadTask()`, and `getLeaderboard()` are all hardcoded mock returns, not real API calls
 - [ ] Fix biometric proof result in `ProofSubmissionViewModel.swift` lines 280–284 — returns a mock response, not the real API result; users see false success on biometric proof submission
-- [ ] Commit the 1 uncommitted change in the `hustlexp-ios` repo before launch (run `git status` to identify)
+- [ ] Update the `HUSTLEXP-DOCS` submodule pointer in `HUSTLEXPFINAL1` — `git status` shows the `HUSTLEXP-DOCS` submodule has new commits not reflected in the parent repo. Fix: `cd /Users/sebastiandysart/HustleXP/HUSTLEXPFINAL1 && git add HUSTLEXP-DOCS && git commit -m 'chore: update docs submodule to HEAD'`
 
 ---
 

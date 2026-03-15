@@ -12,8 +12,8 @@ This skill covers auditing and adding Zod input validation to tRPC procedures in
 - **Backend location**: `/Users/sebastiandysart/Desktop/hustlexp-ai-backend/backend/src/routers/`
 - **tRPC setup**: `/Users/sebastiandysart/Desktop/hustlexp-ai-backend/backend/src/trpc.ts`
 - **iOS services**: `/Users/sebastiandysart/HustleXP/HUSTLEXPFINAL1/hustleXP final1/Services/`
-- **Current coverage**: ~79% (229/290 procedures) — target 95%+
-- **290 tRPC procedures** across 49 routers
+- **Current coverage**: ~66% (300/456 procedures) — target 95%+
+- **~456 tRPC procedures** across 49 routers
 
 ## Procedure Wrappers (from `backend/src/trpc.ts`)
 
@@ -145,13 +145,27 @@ struct DisbandInput: Encodable {
 ```
 
 ```typescript
-// Correct Zod schema:
+// Correct Zod schema (matches what iOS currently sends):
 .input(z.object({ id: z.string().uuid() }))
-// NOT: .input(z.object({ squadId: z.string().uuid() }))
+// NOTE: squad.ts:455 currently uses { squadId } — this is a LIVE BUG (see below)
 // Field name must match what Swift sends
 ```
 
 **Step 4 — Check `keyDecodingStrategy`**: `TRPCClient.swift` uses `.convertFromSnakeCase`, so iOS sends camelCase keys. The backend receives camelCase. Zod schemas should use camelCase field names.
+
+## Known Active Mismatches (LIVE BUGS)
+
+These are confirmed field-name mismatches between iOS and backend that cause runtime failures right now. Fix before adding new validation.
+
+### LIVE BUG: squad.disband field mismatch
+
+- **iOS sends** (`SquadService.swift`, `DisbandInput`): `{ id: String }`
+- **Backend validates** (`squad.ts:455`): `.input(z.object({ squadId: Schemas.uuid }))` — expects `squadId`
+- **Effect**: `squad.disband` fails in production — Zod rejects the iOS payload because `id` does not match the expected `squadId` field
+- **Fix options** (pick one, verify against DB column name first):
+  - Change `squad.ts:455` to `.input(z.object({ id: Schemas.uuid }))` and update the handler to use `input.id`
+  - Change `SquadService.swift` `DisbandInput` to use `squadId` instead of `id`
+- **Before fixing**: grep the DB query in the handler to confirm whether the SQL uses `squad_id` or `id` as the parameter name — this determines which side is "correct"
 
 ## Finding Unvalidated Procedures
 
@@ -234,7 +248,7 @@ npx vitest run 2>&1 | tail -15
 When reporting audit progress, always use this format:
 
 ```
-Zod Audit Progress: X/290 validated (Y%)
+Zod Audit Progress: X/456 validated (Y%)
 Session additions: +N procedures in [router list]
 Remaining priority: squad.ts (26 gap), task.ts (16 gap), recurringTask.ts (12 gap)
 ```
