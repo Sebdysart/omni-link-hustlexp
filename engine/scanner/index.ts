@@ -61,7 +61,7 @@ export interface ScanRepoOptions {
 const execFileAsync = promisify(execFile);
 
 // Directories to always skip during recursive walk
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.claude']);
 
 const SKIP_PATH_SEGMENTS = new Set([
   '__fixtures__',
