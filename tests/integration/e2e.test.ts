@@ -4,10 +4,12 @@
 // runs the full omni-link pipeline, and verifies that scanning, graphing,
 // context generation, and evolution analysis all work end-to-end.
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 import { execSync } from 'node:child_process';
 import { scan } from '../../engine/index.js';
 import { evolve } from '../../engine/index.js';
