@@ -19,6 +19,8 @@ import {
   qualityCheck,
   invalidateScanCache,
   clearScanCache,
+  ScanError,
+  PathTraversalError,
 } from '../../engine/index.js';
 import type {
   OmniLinkConfig,
@@ -26,6 +28,7 @@ import type {
   HealthResult,
   QualityCheckResult,
 } from '../../engine/index.js';
+import { ConfigError } from '../../engine/errors.js';
 import type { EvolutionSuggestion, ImpactPath } from '../../engine/types.js';
 
 // ─── Fixture Factories ──────────────────────────────────────────────────────
@@ -2142,5 +2145,268 @@ describe('E2E Lifecycle: Multi-Language Ecosystem', () => {
     const result = await health(config);
     expect(Object.keys(result.perRepo)).toHaveLength(3);
     expect(result.overall).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 15: STRUCTURED ERROR TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Structured Error Types', () => {
+  it('ScanError carries repoId and phase', () => {
+    const err = new ScanError('git timeout', 'my-repo', 'git');
+    expect(err.name).toBe('ScanError');
+    expect(err.repoId).toBe('my-repo');
+    expect(err.phase).toBe('git');
+    expect(err.message).toContain('my-repo');
+    expect(err.message).toContain('git');
+  });
+
+  it('ConfigError carries field and suggestion', () => {
+    const err = new ConfigError(
+      'bad aggressiveness',
+      'evolution.aggressiveness',
+      'Use "aggressive"',
+    );
+    expect(err.name).toBe('ConfigError');
+    expect(err.field).toBe('evolution.aggressiveness');
+    expect(err.suggestion).toBe('Use "aggressive"');
+  });
+
+  it('PathTraversalError carries repoId and path', () => {
+    const err = new PathTraversalError('path escape', 'evil-repo', '/etc/passwd');
+    expect(err.name).toBe('PathTraversalError');
+    expect(err.repoId).toBe('evil-repo');
+    expect(err.offendingPath).toBe('/etc/passwd');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 16: PARTIAL FAILURE RESILIENCE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Partial Failure Resilience', () => {
+  it('scan gracefully produces empty manifest for non-existent repo path', async () => {
+    const goodDir = createMinimalRepo('e2e-partial-good-');
+    const config = makeConfig([
+      { name: 'good-repo', path: goodDir, language: 'typescript', role: 'backend' },
+      {
+        name: 'empty-path-repo',
+        path: '/tmp/nonexistent-e2e-' + Date.now(),
+        language: 'typescript',
+        role: 'backend',
+      },
+    ]);
+
+    const result = await scan(config);
+    // Both repos produce manifests — the non-existent one is just empty
+    expect(result.manifests.length).toBe(2);
+    const emptyManifest = result.manifests.find((m) => m.repoId === 'empty-path-repo')!;
+    expect(emptyManifest.apiSurface.routes).toHaveLength(0);
+    expect(emptyManifest.apiSurface.exports).toHaveLength(0);
+
+    cleanDir(goodDir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('scan with all valid repos produces empty failures array', async () => {
+    const dir = createMinimalRepo('e2e-no-failures-');
+    const config = makeConfig([
+      { name: 'ok-repo', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+
+    const result = await scan(config);
+    expect(result.failures).toHaveLength(0);
+    expect(result.manifests).toHaveLength(1);
+
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('health still works when scan has partial failures', async () => {
+    const goodDir = createMinimalRepo('e2e-health-partial-');
+    const config = makeConfig([
+      { name: 'healthy-repo', path: goodDir, language: 'typescript', role: 'backend' },
+      {
+        name: 'dead-repo',
+        path: '/tmp/dead-repo-' + Date.now(),
+        language: 'typescript',
+        role: 'backend',
+      },
+    ]);
+
+    const result = await health(config);
+    expect(typeof result.overall).toBe('number');
+    expect(Object.keys(result.perRepo).length).toBeGreaterThanOrEqual(1);
+
+    cleanDir(goodDir);
+    cleanDir(config.cache.directory);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 17: CLI ERROR HANDLING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: CLI Error Handling', () => {
+  it('CLI returns structured error with exit code for unknown command', async () => {
+    const { runCli } = await import('../../engine/cli-app.js');
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const code = await runCli(['nonexistent-command'], {
+      stdout: (msg) => stdout.push(msg),
+      stderr: (msg) => stderr.push(msg),
+    });
+
+    expect(code).toBe(1);
+    expect(stderr.some((msg) => msg.includes('Unknown command'))).toBe(true);
+  });
+
+  it('CLI returns 0 for --help', async () => {
+    const { runCli } = await import('../../engine/cli-app.js');
+    const stdout: string[] = [];
+
+    const code = await runCli(['--help'], {
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => undefined,
+    });
+
+    expect(code).toBe(0);
+    expect(stdout.some((msg) => msg.includes('omni-link'))).toBe(true);
+  });
+
+  it('CLI parseArgs rejects unknown options', async () => {
+    const { parseArgs } = await import('../../engine/cli-app.js');
+
+    expect(() => parseArgs(['--bogus-flag'])).toThrow('Unknown option');
+  });
+
+  it('CLI parseArgs handles missing option values', async () => {
+    const { parseArgs } = await import('../../engine/cli-app.js');
+
+    expect(() => parseArgs(['--config'])).toThrow('Missing value for --config');
+    expect(() => parseArgs(['--format'])).toThrow('Missing value for --format');
+    expect(() => parseArgs(['--base'])).toThrow('Missing value for --base');
+  });
+
+  it('CLI parseArgs validates --simulate format', async () => {
+    const { parseArgs } = await import('../../engine/cli-app.js');
+
+    expect(() => parseArgs(['--simulate', 'no-colon'])).toThrow('repo:filepath');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 18: CONFIG VALIDATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Config Validation', () => {
+  it('Zod schema rejects config with no repos', async () => {
+    const { safeParseConfig } = await import('../../engine/config-validator.js');
+    const result = safeParseConfig({ repos: [] });
+    expect(result.success).toBe(false);
+  });
+
+  it('Zod schema rejects invalid aggressiveness', async () => {
+    const { safeParseConfig } = await import('../../engine/config-validator.js');
+    const result = safeParseConfig({
+      repos: [{ name: 'r', path: '/tmp', language: 'typescript', role: 'backend' }],
+      evolution: { aggressiveness: 'typo-here' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('Zod schema rejects negative maxSuggestionsPerSession', async () => {
+    const { safeParseConfig } = await import('../../engine/config-validator.js');
+    const result = safeParseConfig({
+      repos: [{ name: 'r', path: '/tmp', language: 'typescript', role: 'backend' }],
+      evolution: { maxSuggestionsPerSession: -5 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('Zod schema rejects unsupported language', async () => {
+    const { safeParseConfig } = await import('../../engine/config-validator.js');
+    const result = safeParseConfig({
+      repos: [{ name: 'r', path: '/tmp', language: 'cobol', role: 'backend' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('Zod schema accepts valid config and applies defaults', async () => {
+    const { parseConfig } = await import('../../engine/config-validator.js');
+    const config = parseConfig({
+      repos: [{ name: 'my-repo', path: '/tmp/repo', language: 'typescript', role: 'backend' }],
+    });
+    expect(config.repos).toHaveLength(1);
+    expect(config.evolution.aggressiveness).toBe('aggressive');
+    expect(config.quality.conventionStrictness).toBe('strict');
+    expect(config.context.tokenBudget).toBe(8000);
+  });
+
+  it('Zod schema normalizes "features" category to "feature"', async () => {
+    const { parseConfig } = await import('../../engine/config-validator.js');
+    const config = parseConfig({
+      repos: [{ name: 'r', path: '/tmp', language: 'typescript', role: 'backend' }],
+      evolution: { categories: ['features', 'security'] },
+    });
+    expect(config.evolution.categories).toContain('feature');
+    expect(config.evolution.categories).not.toContain('features');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 19: GIT TIMEOUT RESILIENCE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Git Timeout Resilience', () => {
+  it('scan completes within timeout on valid repo', async () => {
+    const dir = createMinimalRepo('e2e-git-timeout-');
+    const config = makeConfig([
+      { name: 'timeout-test', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+
+    const start = Date.now();
+    const result = await scan(config);
+    const duration = Date.now() - start;
+
+    expect(result.manifests).toHaveLength(1);
+    expect(duration).toBeLessThan(15_000);
+
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 20: DAEMON STORE RESILIENCE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Daemon Store Resilience', () => {
+  it('store recovers from corrupted SQLite file', async () => {
+    const { GraphStateStore } = await import('../../engine/daemon/store.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-daemon-corrupt-'));
+    const storePath = path.join(tmpDir, 'state.sqlite');
+
+    fs.writeFileSync(storePath, 'NOT A SQLITE FILE - CORRUPTED DATA');
+
+    const store = new GraphStateStore(storePath);
+    const loaded = await store.load();
+    expect(loaded).toBeNull();
+
+    cleanDir(tmpDir);
+  });
+
+  it('store creates fresh database when file is missing', async () => {
+    const { GraphStateStore } = await import('../../engine/daemon/store.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-daemon-fresh-'));
+    const storePath = path.join(tmpDir, 'nonexistent.sqlite');
+
+    const store = new GraphStateStore(storePath);
+    const loaded = await store.load();
+    expect(loaded).toBeNull();
+
+    cleanDir(tmpDir);
   });
 });
