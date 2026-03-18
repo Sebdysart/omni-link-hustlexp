@@ -240,8 +240,24 @@ async function loadScanResult(
   return result;
 }
 
-export async function scan(config: OmniLinkConfig): Promise<ScanResult> {
-  return loadScanResult(config);
+export async function scan(
+  config: OmniLinkConfig,
+  options: { bypassCache?: boolean } = {},
+): Promise<ScanResult> {
+  if (options.bypassCache) {
+    invalidateCachedScanResult(config);
+  }
+  return loadScanResult(config, {
+    bypassSessionCache: options.bypassCache,
+  });
+}
+
+export function invalidateScanCache(config: OmniLinkConfig): void {
+  invalidateCachedScanResult(config);
+}
+
+export function clearScanCache(): void {
+  scanResultCache.clear();
 }
 
 export async function impact(

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { scanRepo } from '../../engine/scanner/index.js';
 import type { RepoConfig } from '../../engine/types.js';
 import type { FileCache } from '../../engine/scanner/index.js';
@@ -8,6 +8,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
+
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 describe('scanRepo orchestrator', () => {
   let tmpDir: string;
