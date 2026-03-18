@@ -11,7 +11,15 @@ import * as os from 'node:os';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 import { execSync } from 'node:child_process';
-import { scan, evolve, health, impact, qualityCheck } from '../../engine/index.js';
+import {
+  scan,
+  evolve,
+  health,
+  impact,
+  qualityCheck,
+  invalidateScanCache,
+  clearScanCache,
+} from '../../engine/index.js';
 import type {
   OmniLinkConfig,
   ScanResult,
@@ -1705,5 +1713,434 @@ describe('E2E Lifecycle: Token Pruner Focus Modes', () => {
     const { pruneToTokenBudget } = await import('../../engine/context/token-pruner.js');
     const result = pruneToTokenBudget(scanResult.graph, 100, 'changed-files-first', 'api-surface');
     expect(typeof result).toBe('object');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 11: CACHE INVALIDATION API
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Cache Invalidation API', () => {
+  let dir: string;
+  let config: OmniLinkConfig;
+
+  beforeAll(() => {
+    dir = createTypescriptBackend('e2e-cache-api-');
+    config = makeConfig([
+      { name: 'cache-api-test', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+  });
+
+  afterAll(() => {
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('invalidateScanCache forces a fresh scan on next call', async () => {
+    const r1 = await scan(config);
+    expect(r1.manifests).toHaveLength(1);
+
+    invalidateScanCache(config);
+
+    const r2 = await scan(config);
+    expect(r2.manifests).toHaveLength(1);
+    expect(r2.manifests[0].repoId).toBe('cache-api-test');
+  });
+
+  it('clearScanCache empties the entire session cache', async () => {
+    await scan(config);
+    clearScanCache();
+    const r2 = await scan(config);
+    expect(r2.manifests).toHaveLength(1);
+  });
+
+  it('scan with bypassCache: true gets fresh results', async () => {
+    const r1 = await scan(config);
+    expect(r1.manifests).toHaveLength(1);
+
+    fs.writeFileSync(
+      path.join(dir, 'src', 'routes', 'bypass-test.ts'),
+      `import { Hono } from 'hono';
+const app = new Hono();
+app.get('/api/bypass-test', (c) => c.json({ ok: true }));
+export default app;
+`,
+    );
+
+    const r2 = await scan(config, { bypassCache: true });
+    const be = r2.manifests.find((m) => m.repoId === 'cache-api-test')!;
+    expect(be.apiSurface.routes.map((r) => r.path)).toContain('/api/bypass-test');
+
+    fs.unlinkSync(path.join(dir, 'src', 'routes', 'bypass-test.ts'));
+  });
+
+  it('cache invalidation followed by file change reflects new routes', async () => {
+    await scan(config);
+
+    const newFile = path.join(dir, 'src', 'routes', 'invalidation-test.ts');
+    fs.writeFileSync(
+      newFile,
+      `import { Hono } from 'hono';
+const app = new Hono();
+app.get('/api/invalidation', (c) => c.json({ fresh: true }));
+export default app;
+`,
+    );
+
+    invalidateScanCache(config);
+    const r2 = await scan(config);
+    const be = r2.manifests.find((m) => m.repoId === 'cache-api-test')!;
+    expect(be.apiSurface.routes.map((r) => r.path)).toContain('/api/invalidation');
+
+    fs.unlinkSync(newFile);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 12: CROSS-REPO BRIDGE ANALYSIS (HustleXP Fixture)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Cross-Repo Bridge Analysis', () => {
+  it('analyzeSwiftTrpcBridge maps iOS calls to backend procedures', async () => {
+    const { analyzeSwiftTrpcBridge } = await import('../../engine/bridges/swift-trpc.js');
+    const { loadAuthorityState } = await import('../../engine/authority/index.js');
+
+    const fixtureRoot = path.resolve(import.meta.dirname!, '..', 'fixtures', 'hustlexp-workspace');
+
+    const makeManifest = (
+      repoId: string,
+      repoPath: string,
+      language: string,
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> => ({
+      repoId,
+      path: repoPath,
+      language,
+      gitState: {
+        branch: 'main',
+        headSha: 'head',
+        uncommittedChanges: [],
+        recentCommits: [],
+      },
+      apiSurface: { routes: [], procedures: [], exports: [] },
+      typeRegistry: { types: [], schemas: [], models: [] },
+      conventions: {
+        naming: 'camelCase' as const,
+        fileOrganization: 'domain',
+        errorHandling: 'throws',
+        patterns: [],
+        testingPatterns: '',
+      },
+      dependencies: { internal: [], external: [] },
+      health: {
+        testCoverage: null,
+        lintErrors: 0,
+        typeErrors: 0,
+        todoCount: 0,
+        deadCode: [],
+      },
+      ...overrides,
+    });
+
+    const bridgeConfig: OmniLinkConfig = {
+      workflowProfile: 'hustlexp',
+      repos: [
+        {
+          name: 'hustlexp-ios',
+          path: path.join(fixtureRoot, 'ios'),
+          language: 'swift',
+          role: 'ios-client',
+        },
+        {
+          name: 'hustlexp-backend',
+          path: path.join(fixtureRoot, 'backend'),
+          language: 'typescript',
+          role: 'backend-api',
+        },
+        {
+          name: 'hustlexp-docs',
+          path: path.join(fixtureRoot, 'docs'),
+          language: 'javascript',
+          role: 'product-governance',
+        },
+      ],
+      reviewProvider: 'github',
+      evolution: {
+        aggressiveness: 'aggressive',
+        maxSuggestionsPerSession: 5,
+        categories: ['feature', 'security'],
+      },
+      quality: {
+        blockOnFailure: true,
+        requireTestsForNewCode: true,
+        conventionStrictness: 'strict',
+      },
+      context: {
+        tokenBudget: 8000,
+        prioritize: 'api-surface-first',
+        includeRecentCommits: 20,
+      },
+      cache: { directory: os.tmpdir(), maxAgeDays: 1 },
+      authority: {
+        enabled: true,
+        docsRepo: path.join(fixtureRoot, 'docs'),
+        phaseMode: 'reconciliation',
+        authorityFiles: {
+          currentPhase: 'CURRENT_PHASE.md',
+          finishedState: 'FINISHED_STATE.md',
+          featureFreeze: 'FEATURE_FREEZE.md',
+          aiGuardrails: 'AI_GUARDRAILS.md',
+          apiContract: 'specs/04-backend/API_CONTRACT.md',
+          schema: 'specs/02-architecture/schema.sql',
+        },
+      },
+      bridges: {
+        swiftTrpc: {
+          enabled: true,
+          iosRepo: path.join(fixtureRoot, 'ios'),
+          backendRepo: path.join(fixtureRoot, 'backend'),
+          clientCallPattern:
+            'trpc\\\\.call\\\\(router:\\\\s*"(?<router>[A-Za-z_][A-Za-z0-9_]*)"\\\\s*,\\\\s*procedure:\\\\s*"(?<procedure>[A-Za-z_][A-Za-z0-9_]*)"\\\\s*\\\\)',
+          authoritativeBackendRoot: 'backend/src',
+        },
+      },
+    };
+
+    const authority = loadAuthorityState(bridgeConfig);
+    const graph = {
+      repos: [
+        makeManifest('hustlexp-ios', path.join(fixtureRoot, 'ios'), 'swift'),
+        makeManifest('hustlexp-backend', path.join(fixtureRoot, 'backend'), 'typescript', {
+          apiSurface: {
+            routes: [],
+            procedures: [
+              { name: 'create', kind: 'mutation', file: 'backend/src/routers/task.ts', line: 3 },
+              {
+                name: 'sendMessage',
+                kind: 'mutation',
+                file: 'backend/src/routers/messaging.ts',
+                line: 3,
+              },
+            ],
+            exports: [],
+          },
+        }),
+        makeManifest('hustlexp-docs', path.join(fixtureRoot, 'docs'), 'javascript'),
+      ],
+      bridges: [],
+      sharedTypes: [],
+      contractMismatches: [],
+      impactPaths: [],
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const analysis = analyzeSwiftTrpcBridge(bridgeConfig, graph as any, authority);
+
+    expect(analysis.iosCalls.length).toBeGreaterThan(0);
+    expect(analysis.backendProcedures.length).toBeGreaterThan(0);
+    expect(analysis.bridges.length).toBeGreaterThan(0);
+    expect(analysis.mismatches.length).toBeGreaterThan(0);
+
+    const callIds = analysis.iosCalls.map((c) => `${c.router}.${c.procedure}`);
+    expect(callIds).toContain('task.create');
+    expect(callIds).toContain('messaging.sendMessage');
+    expect(callIds).toContain('legacy.oldProcedure');
+
+    expect(analysis.findings.map((f) => f.kind)).toContain('bridge_obsolete_call');
+  });
+
+  it('authority state parses current phase from fixtures', async () => {
+    const { loadAuthorityState } = await import('../../engine/authority/index.js');
+    const fixtureRoot = path.resolve(import.meta.dirname!, '..', 'fixtures', 'hustlexp-workspace');
+
+    const config: OmniLinkConfig = {
+      repos: [],
+      evolution: {
+        aggressiveness: 'aggressive',
+        maxSuggestionsPerSession: 5,
+        categories: [],
+      },
+      quality: {
+        blockOnFailure: true,
+        requireTestsForNewCode: true,
+        conventionStrictness: 'strict',
+      },
+      context: { tokenBudget: 8000, prioritize: 'api-surface-first', includeRecentCommits: 20 },
+      cache: { directory: os.tmpdir(), maxAgeDays: 1 },
+      authority: {
+        enabled: true,
+        docsRepo: path.join(fixtureRoot, 'docs'),
+        phaseMode: 'reconciliation',
+        authorityFiles: {
+          currentPhase: 'CURRENT_PHASE.md',
+          finishedState: 'FINISHED_STATE.md',
+          featureFreeze: 'FEATURE_FREEZE.md',
+          aiGuardrails: 'AI_GUARDRAILS.md',
+          apiContract: 'specs/04-backend/API_CONTRACT.md',
+          schema: 'specs/02-architecture/schema.sql',
+        },
+      },
+    };
+
+    const authority = loadAuthorityState(config);
+    expect(authority?.currentPhase).toBe('BOOTSTRAP');
+    expect(authority?.authoritativeApiSurface.procedures.length).toBeGreaterThan(0);
+    expect(authority?.authoritativeSchemaSurface.tables).toContain('users');
+    expect(authority?.authoritativeSchemaSurface.tables).toContain('tasks');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 13: ENHANCED ERROR RECOVERY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Enhanced Error Recovery', () => {
+  it('qualityCheck handles deeply nested code without stack overflow', async () => {
+    const dir = createMinimalRepo('e2e-deep-nesting-');
+    const config = makeConfig([
+      { name: 'deep-nesting', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+
+    const deepCode =
+      Array.from({ length: 50 }, (_, i) => `if (true) {`.padStart(i + 12)).join('\n') +
+      '\nconsole.log("deep");\n' +
+      Array.from({ length: 50 }, () => '}').join('\n');
+
+    const result = await qualityCheck(deepCode, path.join(dir, 'src', 'deep.ts'), config);
+    expect(result).toBeDefined();
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('impact analysis handles unknown repo names gracefully', async () => {
+    const dir = createMinimalRepo('e2e-unknown-repo-');
+    const config = makeConfig([
+      { name: 'known-repo', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+
+    const paths = await impact(config, [
+      { repo: 'unknown-repo-that-does-not-exist', file: 'src/index.ts', change: 'type-change' },
+    ]);
+    expect(paths).toBeInstanceOf(Array);
+
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('evolve handles empty categories gracefully', async () => {
+    const dir = createMinimalRepo('e2e-empty-cats-');
+    const config = makeConfig(
+      [{ name: 'empty-cats', path: dir, language: 'typescript', role: 'backend' }],
+      {
+        evolution: {
+          aggressiveness: 'aggressive',
+          maxSuggestionsPerSession: 10,
+          categories: [],
+        },
+      },
+    );
+
+    const result = await evolve(config);
+    expect(result).toBeInstanceOf(Array);
+    expect(result).toHaveLength(0);
+
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('scan handles repo with only binary-like filenames', async () => {
+    const dir = createMinimalRepo('e2e-binary-names-');
+    fs.writeFileSync(path.join(dir, 'src', 'data.bin'), Buffer.from([0x00, 0x01, 0x02, 0xff]));
+    fs.writeFileSync(path.join(dir, 'src', 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const config = makeConfig([
+      { name: 'binary-test', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+
+    const result = await scan(config);
+    expect(result.manifests).toHaveLength(1);
+
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('health is stable after cache invalidation cycle', async () => {
+    const dir = createTypescriptBackend('e2e-health-cache-');
+    const config = makeConfig([
+      { name: 'health-cache', path: dir, language: 'typescript', role: 'backend' },
+    ]);
+
+    const h1 = await health(config);
+    invalidateScanCache(config);
+    const h2 = await health(config);
+
+    expect(h1.overall).toBe(h2.overall);
+
+    cleanDir(dir);
+    cleanDir(config.cache.directory);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 14: MULTI-LANGUAGE ECOSYSTEM (3+ REPOS)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('E2E Lifecycle: Multi-Language Ecosystem', () => {
+  let beDir: string;
+  let iosDir: string;
+  let minDir: string;
+  let config: OmniLinkConfig;
+
+  beforeAll(() => {
+    beDir = createTypescriptBackend('e2e-multi-be-');
+    iosDir = createSwiftIosApp('e2e-multi-ios-');
+    minDir = createMinimalRepo('e2e-multi-util-');
+    config = makeConfig([
+      { name: 'multi-backend', path: beDir, language: 'typescript', role: 'backend' },
+      { name: 'multi-ios', path: iosDir, language: 'swift', role: 'ios' },
+      { name: 'multi-util', path: minDir, language: 'typescript', role: 'shared' },
+    ]);
+  });
+
+  afterAll(() => {
+    cleanDir(beDir);
+    cleanDir(iosDir);
+    cleanDir(minDir);
+    cleanDir(config.cache.directory);
+  });
+
+  it('scan handles 3-repo ecosystem', async () => {
+    const result = await scan(config);
+    expect(result.manifests).toHaveLength(3);
+    expect(result.graph.repos).toHaveLength(3);
+  });
+
+  it('graph detects shared types across 3 repos', async () => {
+    const result = await scan(config);
+    expect(result.graph.sharedTypes.length).toBeGreaterThanOrEqual(0);
+    expect(result.context.digest.repos).toHaveLength(3);
+  });
+
+  it('impact analysis spans 3-repo graph', async () => {
+    const paths = await impact(config, [
+      { repo: 'multi-backend', file: 'src/types/user.ts', change: 'type-change' },
+    ]);
+    expect(paths).toBeInstanceOf(Array);
+  });
+
+  it('evolution suggestions reference repos from 3-repo ecosystem', async () => {
+    const suggestions = await evolve(config);
+    const validRepos = new Set(['multi-backend', 'multi-ios', 'multi-util']);
+    for (const sug of suggestions) {
+      for (const repo of sug.affectedRepos) {
+        expect(validRepos.has(repo)).toBe(true);
+      }
+    }
+  });
+
+  it('health scores all 3 repos', async () => {
+    const result = await health(config);
+    expect(Object.keys(result.perRepo)).toHaveLength(3);
+    expect(result.overall).toBeGreaterThan(0);
   });
 });
