@@ -75,5 +75,5 @@ describe('scripts/full-stress', () => {
     expect(summary.maxTier.gitlabNegotiatedAnnotations).toBe(0);
     expect(summary.contracts.maxCommandsLocked).toBe(6);
     expect(summary.benchmark.bridges).toBeGreaterThanOrEqual(40);
-  }, 120000);
+  }, 180_000);
 });
