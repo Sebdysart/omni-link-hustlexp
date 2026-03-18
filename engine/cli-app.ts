@@ -419,7 +419,35 @@ export async function runCli(
         return 1;
     }
   } catch (error) {
-    io.stderr(error instanceof Error ? error.message : String(error));
+    if (error instanceof Error) {
+      io.stderr(`Error: ${error.message}`);
+      if ('repoId' in error && typeof (error as Record<string, unknown>).repoId === 'string') {
+        io.stderr(`  Repo: ${(error as Record<string, unknown>).repoId}`);
+      }
+      if ('phase' in error && typeof (error as Record<string, unknown>).phase === 'string') {
+        io.stderr(`  Phase: ${(error as Record<string, unknown>).phase}`);
+      }
+      if ('field' in error && typeof (error as Record<string, unknown>).field === 'string') {
+        io.stderr(`  Field: ${(error as Record<string, unknown>).field}`);
+      }
+      if (
+        'suggestion' in error &&
+        typeof (error as Record<string, unknown>).suggestion === 'string'
+      ) {
+        io.stderr(`  Suggestion: ${(error as Record<string, unknown>).suggestion}`);
+      }
+      if (error.message.includes('ENOENT')) {
+        io.stderr('  Hint: check that the repo path in your config exists on disk');
+      }
+      if (error.message.includes('config')) {
+        io.stderr('  Hint: validate your config with the Zod schema or check .omni-link.json');
+      }
+    } else {
+      io.stderr(String(error));
+    }
+    if (error instanceof Error && error.name === 'ConfigError') return 2;
+    if (error instanceof Error && error.name === 'PathTraversalError') return 2;
+    if (error instanceof Error && error.name === 'ScanError') return 3;
     return 1;
   }
 }
