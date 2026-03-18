@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# hooks/subagent-stop — Fires when a sub-agent completes.
+# Formats the output as a structured handoff and appends to the bulletin board.
+
+set -euo pipefail
+
+CLAUDE_MD="${CLAUDE_PLUGIN_ROOT:-.}/CLAUDE.md"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+
+# Append completion record to CLAUDE.md shared bulletin board if it exists
+if [ -f "$CLAUDE_MD" ]; then
+  if grep -q "## Shared Bulletin Board" "$CLAUDE_MD" 2>/dev/null; then
+    echo "" >> "$CLAUDE_MD"
+    echo "<!-- subagent-stop: $TIMESTAMP -->" >> "$CLAUDE_MD"
+  fi
+fi
+
+echo '{"event":"subagent_stop","timestamp":"'"$TIMESTAMP"'","status":"completed"}'

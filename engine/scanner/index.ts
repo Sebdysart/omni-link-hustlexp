@@ -569,12 +569,15 @@ async function resolveOwnedGitRoot(repoPath: string): Promise<string | null> {
 /**
  * Execute a git command in the given repo directory and return trimmed stdout.
  */
+const GIT_TIMEOUT_MS = 15_000;
+
 async function gitExec(repoPath: string, args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', repoPath, ...args], {
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,
       windowsHide: true,
+      timeout: GIT_TIMEOUT_MS,
     });
     return stdout.trim();
   } catch {

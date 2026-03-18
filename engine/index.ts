@@ -1,5 +1,8 @@
 // engine/index.ts — Top-level orchestrator: wires scanner -> grapher -> context -> evolution -> quality
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import type {
   AuthorityStatusResult,
   DaemonStatus,
@@ -15,6 +18,7 @@ import type {
   EvolutionSuggestion,
 } from './types.js';
 import pLimit from 'p-limit';
+import { ScanError, PathTraversalError, type RepoScanFailure } from './errors.js';
 
 import { analyzeImpact } from './grapher/impact-analyzer.js';
 import { buildEcosystemGraph } from './grapher/index.js';
@@ -78,6 +82,8 @@ function uniqueBy<T>(items: T[], keyFor: (item: T) => string): T[] {
 }
 
 export { SimulateOnlyError } from './quality/simulate-guard.js';
+export { ScanError, PathTraversalError, ConfigError } from './errors.js';
+export type { RepoScanFailure, ScanPhase } from './errors.js';
 
 export type {
   OmniLinkConfig,
@@ -103,6 +109,7 @@ export interface ScanResult {
   manifests: RepoManifest[];
   graph: EcosystemGraph;
   context: { digest: EcosystemDigest; markdown: string };
+  failures: RepoScanFailure[];
 }
 
 export interface HealthResult {
@@ -174,7 +181,27 @@ function authorityRecommendations(status: AuthorityStatusResult): string[] {
 
 const DEFAULT_SCAN_CONCURRENCY = 4;
 
-async function scanConfiguredRepos(config: OmniLinkConfig): Promise<RepoManifest[]> {
+function validateRepoPaths(config: OmniLinkConfig): void {
+  for (const repo of config.repos) {
+    const resolved = path.resolve(repo.path);
+    if (resolved.includes('..') && !fs.existsSync(resolved)) {
+      throw new PathTraversalError(
+        `Repo path "${repo.path}" resolves outside workspace and does not exist`,
+        repo.name,
+        resolved,
+      );
+    }
+  }
+}
+
+interface ScanReposResult {
+  manifests: RepoManifest[];
+  failures: RepoScanFailure[];
+}
+
+async function scanConfiguredRepos(config: OmniLinkConfig): Promise<ScanReposResult> {
+  validateRepoPaths(config);
+
   const fileCache: FileCache = new Map();
   const manifestCache: CacheManager | undefined = config.cache?.directory
     ? new CacheManager(config.cache.directory)
@@ -185,16 +212,36 @@ async function scanConfiguredRepos(config: OmniLinkConfig): Promise<RepoManifest
   }
 
   const limit = pLimit(DEFAULT_SCAN_CONCURRENCY);
-  return Promise.all(
+  const results = await Promise.allSettled(
     config.repos.map((repo) => limit(() => scanRepo(repo, fileCache, manifestCache, { config }))),
   );
+
+  const manifests: RepoManifest[] = [];
+  const failures: RepoScanFailure[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      manifests.push(result.value);
+    } else {
+      const repo = config.repos[i];
+      const error = result.reason;
+      failures.push({
+        repoId: repo.name,
+        phase: error instanceof ScanError ? error.phase : 'parse',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { manifests, failures };
 }
 
 async function scanLive(config: OmniLinkConfig): Promise<ScanResult> {
-  const manifests = await scanConfiguredRepos(config);
+  const { manifests, failures } = await scanConfiguredRepos(config);
   const graph = enrichGraphForConfig(buildEcosystemGraph(manifests), config);
   const context = buildContext(graph, config);
-  return { manifests, graph, context };
+  return { manifests, graph, context, failures };
 }
 
 async function loadScanResult(
@@ -211,10 +258,11 @@ async function loadScanResult(
     if (state) {
       const graph = enrichGraphForConfig(state.graph, config);
       const context = buildContext(graph, config);
-      const result = {
+      const result: ScanResult = {
         manifests: state.manifests,
         graph,
         context,
+        failures: [],
       };
       cacheScanResult(config, result);
       return result;
@@ -240,8 +288,24 @@ async function loadScanResult(
   return result;
 }
 
-export async function scan(config: OmniLinkConfig): Promise<ScanResult> {
-  return loadScanResult(config);
+export async function scan(
+  config: OmniLinkConfig,
+  options: { bypassCache?: boolean } = {},
+): Promise<ScanResult> {
+  if (options.bypassCache) {
+    invalidateCachedScanResult(config);
+  }
+  return loadScanResult(config, {
+    bypassSessionCache: options.bypassCache,
+  });
+}
+
+export function invalidateScanCache(config: OmniLinkConfig): void {
+  invalidateCachedScanResult(config);
+}
+
+export function clearScanCache(): void {
+  scanResultCache.clear();
 }
 
 export async function impact(
@@ -463,7 +527,7 @@ export async function qualityCheck(
   file: string,
   config: OmniLinkConfig,
 ): Promise<QualityCheckResult> {
-  const manifests = await scanConfiguredRepos(config);
+  const { manifests } = await scanConfiguredRepos(config);
   const manifest = manifests.find((entry) => file.startsWith(entry.path)) ?? manifests[0];
 
   if (!manifest) {
@@ -493,5 +557,6 @@ export async function refreshDaemonState(config: OmniLinkConfig): Promise<ScanRe
     manifests: state.manifests,
     graph: state.graph,
     context: state.context,
+    failures: [],
   };
 }

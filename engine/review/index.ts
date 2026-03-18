@@ -181,7 +181,7 @@ export function gitChangedFilesBetween(
       const diffOutput = execFileSync(
         'git',
         ['-C', repo.path, 'diff', '--name-only', `${baseRef}...${headRef}`],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000 },
       ).trim();
 
       if (!diffOutput) continue;
@@ -218,6 +218,7 @@ export function gitResolveRefSha(config: OmniLinkConfig, ref: string): string | 
       return execFileSync('git', ['-C', repo.path, 'rev-parse', ref], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 15_000,
       }).trim();
     } catch {
       continue;

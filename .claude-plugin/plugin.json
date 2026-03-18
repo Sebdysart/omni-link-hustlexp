@@ -1,7 +1,7 @@
 {
   "name": "omni-link-hustlexp",
-  "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code with docs authority, Swift↔tRPC bridge analysis, and phase-drift gating",
-  "version": "1.0.0",
+  "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code with docs authority, Swift↔tRPC bridge analysis, phase-drift gating, and communication-pro-max orchestration (structured handoff, Agent Teams bridge, MCP message bus)",
+  "version": "2.0.0",
   "author": {
     "name": "Sebastian Dysart"
   },
@@ -16,6 +16,18 @@
     "trpc",
     "cross-repo",
     "phase-drift",
-    "hustlexp"
-  ]
+    "hustlexp",
+    "multi-agent",
+    "orchestration",
+    "handoff",
+    "agent-teams",
+    "mcp",
+    "communication-bus"
+  ],
+  "mcpServers": {
+    "communication-bus": {
+      "command": "python3",
+      "args": ["mcp/communication-bus/server.py"]
+    }
+  }
 }

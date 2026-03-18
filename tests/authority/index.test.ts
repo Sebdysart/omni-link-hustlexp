@@ -5,9 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { analyzeAuthorityDrift, loadAuthorityState } from '../../engine/authority/index.js';
 import type { EcosystemGraph, OmniLinkConfig, RepoManifest } from '../../engine/types.js';
 
-const fixtureRoot = path.resolve(
-  '/Users/sebastiandysart/omni-link-hustlexp/tests/fixtures/hustlexp-workspace',
-);
+const fixtureRoot = path.resolve(import.meta.dirname!, '..', 'fixtures', 'hustlexp-workspace');
 
 function makeManifest(
   repoId: string,
