@@ -24,25 +24,30 @@ Maintain this section in CLAUDE.md:
 
 ```markdown
 ## Shared Bulletin Board [communication-pro-max]
+
 - **Last updated:** {{ISO timestamp}}
 - **Active coordinator:** {{agent name or "none"}}
 - **Ecosystem health:** {{score from /health}}
 
 ### Active Tasks
-| ID | Description | Assigned | Status | Updated |
-|----|-------------|----------|--------|---------|
+
+| ID  | Description | Assigned | Status | Updated |
+| --- | ----------- | -------- | ------ | ------- |
 
 ### Recent Handoffs
-| From | To | Summary | Timestamp |
-|------|----|---------|-----------|
+
+| From | To  | Summary | Timestamp |
+| ---- | --- | ------- | --------- |
 
 ### Blockers
-| ID | Description | Owner | Escalated |
-|----|-------------|-------|-----------|
+
+| ID  | Description | Owner | Escalated |
+| --- | ----------- | ----- | --------- |
 
 ### Memory Keys
+
 | Key | Value Summary | Written By | Timestamp |
-|-----|---------------|------------|-----------|
+| --- | ------------- | ---------- | --------- |
 ```
 
 ## Rules

@@ -59,11 +59,12 @@ Maintain in CLAUDE.md under `## Active Task Board`:
 
 ```markdown
 ## Active Task Board [agent-teams-bridge]
-| Task ID | Description | Assigned | Status | Updated |
-|---------|-------------|----------|--------|---------|
-| T-001   | Refactor auth module | @backend-specialist | in-progress | 10:30 |
-| T-002   | Update iOS DTOs | @ios-specialist | claimed | 10:31 |
-| T-003   | Write migration | unclaimed | pending | 10:28 |
+
+| Task ID | Description          | Assigned            | Status      | Updated |
+| ------- | -------------------- | ------------------- | ----------- | ------- |
+| T-001   | Refactor auth module | @backend-specialist | in-progress | 10:30   |
+| T-002   | Update iOS DTOs      | @ios-specialist     | claimed     | 10:31   |
+| T-003   | Write migration      | unclaimed           | pending     | 10:28   |
 ```
 
 ## Integration with omni-link

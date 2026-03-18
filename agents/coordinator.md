@@ -65,6 +65,7 @@ else:
 ### Blocker Handling
 
 If a specialist reports a blocker:
+
 1. Check if another specialist can unblock it
 2. If yes → delegate the unblocking task first, then retry
 3. If no → invoke @error-coordinator with the blocker report
@@ -73,6 +74,7 @@ If a specialist reports a blocker:
 ### State Management
 
 After every delegation round, write to CLAUDE.md > Shared Bulletin Board:
+
 - Which tasks are complete
 - Which are in progress
 - Which are blocked

@@ -43,6 +43,7 @@ writes it to CLAUDE.md > Shared Bulletin Board, and invokes the target agent.
 ## Integration with omni-link
 
 When performing a handoff that involves code changes:
+
 - Run `/scan` to get the current ecosystem state
 - Include the relevant portion of the digest in `ecosystem_state`
 - Run `/impact` if the handoff involves API surface changes
@@ -51,6 +52,7 @@ When performing a handoff that involves code changes:
 ## Receiving a Handoff
 
 When you receive a structured handoff:
+
 1. Parse the JSON
 2. Read all `dependencies` from memory or the filesystem
 3. Execute the `task` according to `expected_format`
