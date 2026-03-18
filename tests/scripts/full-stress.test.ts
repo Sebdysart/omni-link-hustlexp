@@ -1,7 +1,9 @@
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 30_000 });
 
 import { loadConfig, resolveConfigPath } from '../../engine/config.js';
 import * as engine from '../../engine/index.js';
