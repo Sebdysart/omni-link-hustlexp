@@ -420,7 +420,7 @@ export async function runCli(
     }
   } catch (error) {
     if (error instanceof Error) {
-      io.stderr(`Error: ${error.message}`);
+      io.stderr(error.message);
       if ('repoId' in error && typeof (error as Record<string, unknown>).repoId === 'string') {
         io.stderr(`  Repo: ${(error as Record<string, unknown>).repoId}`);
       }
@@ -438,9 +438,6 @@ export async function runCli(
       }
       if (error.message.includes('ENOENT')) {
         io.stderr('  Hint: check that the repo path in your config exists on disk');
-      }
-      if (error.message.includes('config')) {
-        io.stderr('  Hint: validate your config with the Zod schema or check .omni-link.json');
       }
     } else {
       io.stderr(String(error));
