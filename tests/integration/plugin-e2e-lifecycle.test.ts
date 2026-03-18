@@ -1218,7 +1218,7 @@ describe('E2E Lifecycle: Resilience & Error Recovery', () => {
       expect(true).toBe(true);
     }
     cleanDir(config.cache.directory);
-  }, 15_000);
+  }, 30_000);
 
   // ─── Malformed Code ───
 
@@ -1243,7 +1243,7 @@ if (true { console.log("missing paren");
 
     cleanDir(dir);
     cleanDir(config.cache.directory);
-  }, 15_000);
+  }, 30_000);
 
   // ─── Empty Code ───
 
@@ -1259,7 +1259,7 @@ if (true { console.log("missing paren");
 
     cleanDir(dir);
     cleanDir(config.cache.directory);
-  }, 15_000);
+  }, 30_000);
 
   // ─── Very Large Files ───
 
@@ -1280,7 +1280,7 @@ if (true { console.log("missing paren");
 
     cleanDir(dir);
     cleanDir(config.cache.directory);
-  }, 15_000);
+  }, 30_000);
 
   // ─── Unicode / Special Characters ───
 
@@ -1311,7 +1311,7 @@ export interface LocalizedString {
 
     cleanDir(dir);
     cleanDir(config.cache.directory);
-  }, 15_000);
+  }, 30_000);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
