@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# hooks/inject-context — Fires when a sub-agent starts.
+# Injects ecosystem context and shared memory into the sub-agent's initial prompt.
+
+set -euo pipefail
+
+CLAUDE_MD="${CLAUDE_PLUGIN_ROOT:-.}/CLAUDE.md"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+
+# Read the shared bulletin board section if it exists
+BULLETIN=""
+if [ -f "$CLAUDE_MD" ]; then
+  BULLETIN=$(sed -n '/## Shared Bulletin Board/,/^## [^S]/p' "$CLAUDE_MD" 2>/dev/null | head -50 || true)
+fi
+
+if [ -n "$BULLETIN" ]; then
+  echo "--- Shared Context (injected at $TIMESTAMP) ---"
+  echo "$BULLETIN"
+  echo "--- End Shared Context ---"
+fi

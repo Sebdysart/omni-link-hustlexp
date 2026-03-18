@@ -1,0 +1,7 @@
+{
+  "name": "communication-bus",
+  "description": "File-based message queue for inter-agent communication. Zero external dependencies.",
+  "transport": "stdio",
+  "command": "python3",
+  "args": ["mcp/communication-bus/server.py"]
+}

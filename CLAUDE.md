@@ -89,3 +89,37 @@ are cached per config SHA — use `invalidateScanCache(config)` or
 
 Every evolution suggestion MUST have at least one evidence citation pointing to
 a real file, line, and finding. This is the "Iron Law" — no hallucinated advice.
+
+## Multi-Agent Orchestration (communication-pro-max)
+
+This plugin includes structured handoff, Agent Teams bridge, and MCP message bus
+for multi-agent workflows. Key components:
+
+- **Skills:** `structured-handoff`, `agent-teams-bridge`, `error-recovery`
+- **Agents:** `coordinator`, `error-coordinator`, `memory-keeper`, `team-visualizer`
+- **Hooks:** `SubagentStart` (inject-context), `SubagentStop` (subagent-stop)
+- **MCP:** `communication-bus` — file-based JSONL message queue
+
+All inter-agent communication MUST use the structured handoff JSON format.
+Agent Teams mode activates when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set.
+
+## Shared Bulletin Board [communication-pro-max]
+
+- **Last updated:** —
+- **Active coordinator:** none
+- **Ecosystem health:** —
+
+### Active Tasks
+
+| ID  | Description | Assigned | Status | Updated |
+| --- | ----------- | -------- | ------ | ------- |
+
+### Recent Handoffs
+
+| From | To  | Summary | Timestamp |
+| ---- | --- | ------- | --------- |
+
+### Blockers
+
+| ID  | Description | Owner | Escalated |
+| --- | ----------- | ----- | --------- |
