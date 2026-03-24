@@ -100,6 +100,39 @@ function changePlansFromGraph(graph: EcosystemGraph): ChangePlan[] {
     });
   }
 
+  // Generate steps from findings (authority drift, bridge analysis, quality gates)
+  for (const finding of graph.findings ?? []) {
+    const riskFromSeverity: Record<string, 'high' | 'medium' | 'low'> = {
+      error: 'high',
+      warning: 'medium',
+      info: 'low',
+    };
+    type PlanKind = ChangePlan['kind'];
+    const kindMap: Record<string, PlanKind> = {
+      authority_drift: 'docs-update',
+      bridge_obsolete: 'consumer-update',
+      bridge_undocumented: 'docs-update',
+      convention_violation: 'config-update',
+      slop_detected: 'config-update',
+    };
+
+    plans.push({
+      id: `finding-${plans.length + 1}`,
+      kind: kindMap[finding.kind] ?? 'docs-update',
+      title: finding.title,
+      description: finding.description,
+      repo: finding.repo,
+      files: finding.file ? [finding.file] : [],
+      confidence: 0.8,
+      risk: riskFromSeverity[finding.severity] ?? 'medium',
+      dependsOn: [],
+      preconditions:
+        finding.kind === 'authority_drift' ? ['reconcile authority docs before proceeding'] : [],
+      validationSteps: ['run omni-link review-pr', 'verify finding is resolved'],
+      rollbackSteps: ['revert changes to affected files'],
+    });
+  }
+
   if (plans.length === 0) {
     plans.push({
       id: 'docs-update-1',

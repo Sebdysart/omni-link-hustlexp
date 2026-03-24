@@ -119,7 +119,7 @@ describe('ruflo WorkflowEngine', () => {
           type: 'code',
           description: 'Success task',
           priority: 'high',
-          onRollback: () => {
+          onRollback: (): void => {
             rollbackCalled = true;
           },
         },
@@ -128,7 +128,7 @@ describe('ruflo WorkflowEngine', () => {
           type: 'code',
           description: 'Failing task',
           priority: 'high',
-          onExecute: () => {
+          onExecute: (): void => {
             throw new Error('Intentional failure');
           },
         },

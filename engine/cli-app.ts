@@ -16,6 +16,18 @@ import {
 import { loadConfig, resolveConfigPath } from './config.js';
 import { defaultBaseRefForProvider } from './providers/index.js';
 import type { OmniLinkConfig } from './types.js';
+import {
+  SwarmCoordinator,
+  WorkflowEngine,
+  HybridBackend,
+  SQLiteBackend,
+  AgentDBBackend,
+  PluginManager,
+  HustleXPEngineeringPlugin,
+  TokenOptimizer,
+  SelfLearningLoop,
+  createEmbeddingProvider,
+} from './ruflo/index.js';
 
 export const USAGE = `
 omni-link — Multi-repo AI ecosystem plugin for Claude Code
@@ -35,6 +47,7 @@ Commands:
   publish-review Publish the saved PR review artifact through the configured provider transport
   apply     Execute the generated automation plan (bounded by policy)
   rollback  Roll back the last generated automation plan
+  swarm     Show ruflo swarm engine status and capabilities
 
 Options:
   --config <path>         Path to .omni-link.json config file
@@ -409,6 +422,96 @@ export async function runCli(
         const config = resolveCliConfig(args.configPath, deps);
         const result = await deps.rollback(config);
         io.stdout(JSON.stringify(result, null, 2));
+        return 0;
+      }
+
+      case 'swarm': {
+        const sqliteBackend = new SQLiteBackend(':memory:');
+        const agentDbBackend = new AgentDBBackend({ dbPath: ':memory:', dimensions: 384 });
+        const memoryBackend = new HybridBackend(sqliteBackend, agentDbBackend);
+        await memoryBackend.initialize();
+
+        const pluginManager = new PluginManager({ coreVersion: '3.0.0' });
+        await pluginManager.initialize();
+
+        const coordinator = new SwarmCoordinator({
+          topology: 'hierarchical',
+          memoryBackend,
+          pluginManager,
+        });
+        await coordinator.initialize();
+
+        const workflowEngine = new WorkflowEngine({
+          coordinator,
+          memoryBackend,
+          pluginManager,
+        });
+        await workflowEngine.initialize();
+
+        const embeddingProvider = createEmbeddingProvider(384);
+        const learningLoop = new SelfLearningLoop(memoryBackend, embeddingProvider);
+        const tokenOptimizer = new TokenOptimizer();
+
+        const hustlexpPlugin = new HustleXPEngineeringPlugin();
+        await pluginManager.loadPlugin(hustlexpPlugin, {
+          workflowProfile: 'hustlexp',
+          simulateOnly: true,
+          authority: { enabled: true, phaseMode: 'reconciliation' },
+          bridges: { swiftTrpc: { enabled: true } },
+        });
+
+        const swarmState = await coordinator.getSwarmState();
+        const pluginList = pluginManager.listPlugins();
+        const authorityCheck = await hustlexpPlugin.checkAuthority();
+        const bridgeAnalysis = await hustlexpPlugin.analyzeBridge();
+
+        const optimizationSample = tokenOptimizer.optimize([
+          'sample context for optimization measurement',
+        ]);
+
+        const learningReport = await learningLoop.generateLearningReport('current', null, [
+          'auth',
+          'fin',
+          'onboarding',
+        ]);
+
+        const status = {
+          engine: 'ruflo',
+          version: '3.0.0',
+          topology: swarmState.topology,
+          agents: swarmState.agents.length,
+          plugins: pluginList.map((p) => ({ id: p.id, name: p.name, version: p.version })),
+          memory: { type: 'hybrid', backends: ['sqlite', 'agentdb'] },
+          embedding: { provider: embeddingProvider.name, dimensions: embeddingProvider.dimensions },
+          tokenOptimizer: {
+            strategies: optimizationSample.strategies.map((s) => s.name),
+          },
+          selfLearning: {
+            round: learningReport.round,
+            confidence: learningReport.learningConfidence,
+            domains: learningReport.domainWeights.length,
+          },
+          authority: authorityCheck,
+          bridge: bridgeAnalysis,
+          capabilities: [
+            'swarm-coordination',
+            'workflow-execution',
+            'hybrid-vector-memory',
+            'self-learning-loop',
+            'token-optimization',
+            'plugin-architecture',
+            'mcp-tools',
+            'authority-gating',
+            'bridge-analysis',
+          ],
+        };
+
+        await workflowEngine.shutdown();
+        await coordinator.shutdown();
+        await pluginManager.shutdown();
+        await memoryBackend.close();
+
+        io.stdout(JSON.stringify(status, null, 2));
         return 0;
       }
 
