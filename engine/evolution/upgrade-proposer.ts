@@ -56,7 +56,13 @@ function deduplicateSuggestions(suggestions: EvolutionSuggestion[]): EvolutionSu
     // Strip " in <repoName>" suffix to produce a canonical title
     // Pattern: " in " followed by one non-whitespace token at end of string
     const titleBase = s.title.replace(/ in \S+$/, '').trim();
-    const key = `${s.category}:${titleBase}`;
+    // Normalize case and common synonyms to catch "Add pagination" vs "Implement Pagination"
+    const normalized = titleBase
+      .toLowerCase()
+      .replace(/\bimplement\b/g, 'add')
+      .replace(/\bon\b/g, 'to')
+      .replace(/\s+/g, ' ');
+    const key = `${s.category}:${normalized}`;
 
     const existing = deduped.get(key);
     if (!existing) {
