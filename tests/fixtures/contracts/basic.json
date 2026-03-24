@@ -13,7 +13,7 @@
       "tokenCount"
     ],
     "repoKeys": ["branch", "commitsBehind", "language", "name", "uncommittedCount"],
-    "contractStatusKeys": ["compatible", "exact", "mismatches", "total"],
+    "contractStatusKeys": ["compatible", "docCoverageGaps", "exact", "mismatches", "total"],
     "evolutionSuggestionKeys": [
       "affectedRepos",
       "category",

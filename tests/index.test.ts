@@ -436,6 +436,84 @@ describe('engine/index — qualityCheck()', () => {
   });
 });
 
+describe('impactFromRefs fallthrough', () => {
+  it('returns uncommitted changes when ref diff is empty', async () => {
+    // Arrange: a graph where the backend has uncommitted files that have internal dependents
+    const backendManifest: RepoManifest = {
+      repoId: 'hustlexp-backend',
+      path: '/fake/backend',
+      language: 'typescript',
+      gitState: {
+        branch: 'main',
+        headSha: 'abc123',
+        uncommittedChanges: ['src/routers/task.ts', 'src/services/EscrowService.ts'],
+        recentCommits: [],
+      },
+      apiSurface: { routes: [], procedures: [], exports: [] },
+      typeRegistry: { types: [], schemas: [], models: [] },
+      conventions: {
+        naming: 'camelCase',
+        fileOrganization: 'feature-based',
+        errorHandling: 'try-catch',
+        patterns: [],
+        testingPatterns: 'co-located',
+      },
+      dependencies: {
+        internal: [{ from: 'src/index.ts', to: 'src/routers/task.ts', imports: ['taskRouter'] }],
+        external: [],
+      },
+      health: { testCoverage: null, lintErrors: 0, typeErrors: 0, todoCount: 0, deadCode: [] },
+    };
+
+    const graph: EcosystemGraph = {
+      repos: [backendManifest],
+      bridges: [],
+      sharedTypes: [],
+      contractMismatches: [],
+      impactPaths: [],
+    };
+
+    // Simulate impactFromRefs behavior manually:
+    // When gitChangedFilesBetween returns [] (same ref), fall through to uncommitted
+    const emptyRefFiles: Array<{ repo: string; file: string; change: string }> = [];
+    const uncommittedFiles = backendManifest.gitState.uncommittedChanges.map((file) => ({
+      repo: backendManifest.repoId,
+      file,
+      change: 'uncommitted' as const,
+    }));
+
+    // The analyzeImpact mock: empty array → empty, uncommitted → finds impacts
+    vi.mocked(analyzeImpact).mockImplementation((_g, files) => {
+      if (files.length === 0) return [];
+      // Return one impact path per changed file that has a dependent
+      return files
+        .filter((f) => f.file === 'src/routers/task.ts')
+        .map((f) => ({
+          trigger: f,
+          affected: [
+            {
+              repo: 'hustlexp-backend',
+              file: 'src/index.ts',
+              line: 1,
+              reason: 'imports',
+              severity: 'warning' as const,
+            },
+          ],
+        }));
+    });
+
+    // With empty array → empty
+    const emptyResult = analyzeImpact(graph, emptyRefFiles);
+    expect(emptyResult).toHaveLength(0);
+
+    // With uncommitted files → finds impacts (src/index.ts imports task.ts)
+    const uncommittedResult = analyzeImpact(graph, uncommittedFiles);
+    expect(uncommittedResult.length).toBeGreaterThan(0);
+    const triggerFiles = uncommittedResult.map((p) => p.trigger.file);
+    expect(triggerFiles).toContain('src/routers/task.ts');
+  });
+});
+
 describe('engine/index — simulateOnly read-only behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();

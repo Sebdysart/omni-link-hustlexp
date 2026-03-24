@@ -335,6 +335,23 @@ export async function impactFromRefs(
 ): Promise<ImpactPath[]> {
   const result = await loadScanResult(config);
   const changedFiles = gitChangedFilesBetween(config, baseRef, headRef);
+
+  // When the ref diff is empty (e.g. main===HEAD because all changes are uncommitted),
+  // fall through to uncommitted analysis so `impact --base main --head HEAD`
+  // still surfaces pending changes.
+  if (changedFiles.length === 0) {
+    const uncommittedFiles = result.manifests.flatMap((manifest) =>
+      manifest.gitState.uncommittedChanges.map((file) => ({
+        repo: manifest.repoId,
+        file,
+        change: 'uncommitted' as const,
+      })),
+    );
+    if (uncommittedFiles.length > 0) {
+      return analyzeImpact(result.graph, uncommittedFiles);
+    }
+  }
+
   return analyzeImpact(result.graph, changedFiles);
 }
 

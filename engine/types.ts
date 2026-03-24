@@ -463,6 +463,7 @@ export interface EcosystemDigest {
     total: number;
     exact: number;
     compatible: number;
+    docCoverageGaps: number;
     mismatches: Mismatch[];
   };
   evolutionOpportunities: EvolutionSuggestion[];

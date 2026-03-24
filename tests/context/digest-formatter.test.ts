@@ -287,7 +287,7 @@ describe('formatDigest', () => {
     const { markdown } = formatDigest(graph, config);
 
     expect(markdown).toContain('## API Contracts');
-    expect(markdown).toContain('1 total');
+    expect(markdown).toContain('2 total');
     expect(markdown).toContain('mismatch');
   });
 
@@ -325,8 +325,106 @@ describe('formatDigest', () => {
     const config = makeConfig();
     const { digest } = formatDigest(graph, config);
 
-    expect(digest.contractStatus.total).toBe(1);
+    expect(digest.contractStatus.total).toBe(2);
     expect(digest.contractStatus.mismatches).toHaveLength(1);
+  });
+
+  it('contractStatus.total includes mismatches when bridges array is empty', () => {
+    const graph: EcosystemGraph = {
+      repos: [],
+      bridges: [],
+      sharedTypes: [],
+      contractMismatches: [
+        {
+          kind: 'missing-procedure' as const,
+          description: "Swift and backend both use 'task.create', docs don't declare it",
+          provider: {
+            repo: 'hustlexp-docs',
+            file: 'API_CONTRACT.md',
+            line: 1,
+            field: 'task.create',
+          },
+          consumer: { repo: 'hustlexp-ios', file: 'TaskService.swift', line: 10 },
+          severity: 'warning' as const,
+        },
+        {
+          kind: 'type-mismatch' as const,
+          description: "field 'amount' is number in backend but String in iOS",
+          provider: { repo: 'backend', file: 'types.ts', line: 5, field: 'amount' },
+          consumer: { repo: 'ios', file: 'Models/Escrow.swift', line: 12 },
+          severity: 'breaking' as const,
+        },
+      ],
+      impactPaths: [],
+    };
+    const config = makeConfig();
+    const { digest } = formatDigest(graph, config);
+
+    expect(digest.contractStatus.total).toBe(2);
+    expect(digest.contractStatus.exact).toBe(0);
+    expect(digest.contractStatus.compatible).toBe(0);
+  });
+
+  it('contractStatus separates doc-coverage-gaps from functional mismatches', () => {
+    const graph: EcosystemGraph = {
+      repos: [],
+      bridges: [],
+      sharedTypes: [],
+      contractMismatches: [
+        {
+          kind: 'missing-procedure' as const,
+          description:
+            "Swift client and backend both use 'task.create', but the docs authority does not declare it.",
+          provider: {
+            repo: 'hustlexp-docs',
+            file: 'API_CONTRACT.md',
+            line: 1,
+            field: 'task.create',
+          },
+          consumer: { repo: 'hustlexp-ios', file: 'TaskService.swift', line: 10 },
+          severity: 'warning' as const,
+        },
+        {
+          kind: 'missing-procedure' as const,
+          description:
+            "Swift client and backend both use 'user.me', but the docs authority does not declare it.",
+          provider: { repo: 'hustlexp-docs', file: 'API_CONTRACT.md', line: 1, field: 'user.me' },
+          consumer: { repo: 'hustlexp-ios', file: 'UserService.swift', line: 5 },
+          severity: 'warning' as const,
+        },
+        {
+          kind: 'type-mismatch' as const,
+          description: "field 'amount' is number in backend but String in iOS",
+          provider: { repo: 'backend', file: 'types.ts', line: 5, field: 'amount' },
+          consumer: { repo: 'ios', file: 'Models/Escrow.swift', line: 12 },
+          severity: 'breaking' as const,
+        },
+        {
+          kind: 'obsolete-call' as const,
+          description: "iOS calls 'task.legacyCreate' which no longer exists in backend",
+          provider: {
+            repo: 'backend',
+            file: 'routers/task.ts',
+            line: 1,
+            field: 'task.legacyCreate',
+          },
+          consumer: { repo: 'ios', file: 'TaskService.swift', line: 55 },
+          severity: 'breaking' as const,
+        },
+      ],
+      impactPaths: [],
+    };
+    const config = makeConfig();
+    const { digest } = formatDigest(graph, config);
+
+    expect(digest.contractStatus.total).toBe(4);
+    expect(digest.contractStatus.docCoverageGaps).toBe(2);
+    expect(digest.contractStatus.mismatches).toHaveLength(2);
+    expect(
+      digest.contractStatus.mismatches.every(
+        (m: { kind: string }) => m.kind !== 'missing-procedure',
+      ),
+    ).toBe(true);
   });
 
   it('digest repos array has correct data', () => {

@@ -113,7 +113,7 @@ export function formatDigest(
       sections.push(`Repos: ${graph.repos.length}`);
       sections.push(`API: ${apiSurfaceSummary}`);
       sections.push(
-        `Contracts: ${contractStatus.total} total, ${contractStatus.mismatches.length} mismatches`,
+        `Contracts: ${contractStatus.total} total (${contractStatus.docCoverageGaps} doc gaps, ${contractStatus.mismatches.length} functional mismatches)`,
       );
       sections.push(`Recent: ${recentChangesSummary}`);
       sections.push(`Evolution: ${displayedEvolution.length} suggestion(s)`);
@@ -173,7 +173,7 @@ export function formatDigest(
 
     sections.push('## API Contracts');
     sections.push(
-      `${contractStatus.total} total: ${contractStatus.exact} exact, ${contractStatus.compatible} compatible, ${contractStatus.mismatches.length} mismatches`,
+      `${contractStatus.total} total (${contractStatus.docCoverageGaps} doc gaps, ${contractStatus.mismatches.length} functional mismatches): ${contractStatus.exact} exact, ${contractStatus.compatible} compatible`,
     );
     if (contractStatus.mismatches.length > 0) {
       sections.push('');
@@ -389,6 +389,7 @@ function buildContractStatus(graph: EcosystemGraph): {
   total: number;
   exact: number;
   compatible: number;
+  docCoverageGaps: number;
   mismatches: Mismatch[];
 } {
   let exact = 0;
@@ -406,11 +407,23 @@ function buildContractStatus(graph: EcosystemGraph): {
     }
   }
 
+  // Doc-coverage gaps: procedures that exist in both Swift + backend but aren't
+  // documented in API_CONTRACT.md. These are documentation lag, not functional bugs.
+  const docCoverageGaps = graph.contractMismatches.filter(
+    (m) => m.kind === 'missing-procedure',
+  ).length;
+
+  // Functional mismatches only: type issues, obsolete calls, field divergence
+  const functionalMismatches = graph.contractMismatches.filter(
+    (m) => m.kind !== 'missing-procedure',
+  );
+
   return {
-    total: graph.bridges.length,
+    total: graph.bridges.length + graph.contractMismatches.length,
     exact,
     compatible,
-    mismatches: graph.contractMismatches,
+    docCoverageGaps,
+    mismatches: functionalMismatches,
   };
 }
 
