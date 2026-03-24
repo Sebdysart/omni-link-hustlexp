@@ -4,11 +4,11 @@
 
 ### Project overview
 
-omni-link-hustlexp is a TypeScript ESM CLI tool and Claude Code plugin for multi-repo static analysis, cross-repo impact analysis, and PR review. See `README.md` for full details.
+omni-link-hustlexp is a TypeScript ESM CLI tool and Claude Code plugin for multi-repo static analysis, cross-repo impact analysis, and PR review. It integrates the ruflo orchestration engine (swarm coordination, workflow execution, hybrid vector memory, plugin system) as `engine/ruflo/`. The omni-link analysis pipeline is wired as a ruflo plugin (`HustleXPEngineeringPlugin`). See `README.md` for full details.
 
 ### Service summary
 
-This is a single Node.js service with no external databases or containers. All state (SQLite via `sql.js` WASM, tree-sitter native bindings) runs in-process. No Docker, Redis, or external services are required.
+This is a single Node.js service with no external databases or containers. All state (SQLite via `sql.js` WASM, tree-sitter native bindings, ruflo in-memory backends) runs in-process. No Docker, Redis, or external services are required.
 
 ### Development commands
 
@@ -17,7 +17,7 @@ All standard commands are in `package.json` scripts and documented in `README.md
 - **Build:** `npm run build` (runs `tsc`)
 - **Lint:** `npm run lint` (ESLint + `tsc --noEmit`)
 - **Format check:** `npm run format:check` (Prettier)
-- **Tests:** `npm test` (Vitest, 773 tests, ~2.5 min)
+- **Tests:** `npm test` (Vitest, 847 tests, ~2.5 min)
 - **CLI:** `node dist/cli.js --help`
 - **Full verify gate:** `npm run verify`
 
