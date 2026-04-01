@@ -548,6 +548,15 @@ omni-link-hustlexp/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CLAUDE.md](CLAUDE.md) for coding conventions and rules.
 
+## Related HustleXP Repos
+
+| Repo | Role | Status |
+|------|------|--------|
+| [hustlexp-api](https://github.com/Sebdysart/hustlexp-api) | Production Backend | 28/28 tests, no CI/CD |
+| [HUSTLEXPFINAL1](https://github.com/Sebdysart/HUSTLEXPFINAL1) | iOS/Mobile Client | In development, 5 security findings |
+| [HUSTLEXP-DOCS](https://github.com/Sebdysart/HUSTLEXP-DOCS) | Documentation Authority | 242 files, 90% implementation gap |
+| [HUSTLEXP-ERRORS-AND-TODOS](https://github.com/Sebdysart/HUSTLEXP-ERRORS-AND-TODOS) | Error & Todo Tracker | All platform issues |
+
 ## License
 
 MIT
