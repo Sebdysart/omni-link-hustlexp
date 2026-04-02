@@ -1,0 +1,56 @@
+name: Benchmark Regression Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'engine/**'
+      - 'src/**'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run benchmarks (PR)
+        run: |
+          npm run benchmark:smoke 2>&1 | tee /tmp/bench-pr.txt || true
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-branch
+
+      - name: Run benchmarks (main)
+        run: |
+          cd main-branch
+          npm ci
+          npm run build
+          npm run benchmark:smoke 2>&1 | tee /tmp/bench-main.txt || true
+
+      - name: Compare results
+        run: |
+          echo "## Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "### PR Branch" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/bench-pr.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "### Main Branch" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/bench-main.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
