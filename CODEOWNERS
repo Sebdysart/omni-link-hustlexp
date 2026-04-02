@@ -1,0 +1,26 @@
+# Default owner for everything
+* @Sebdysart
+
+# Engine core - requires review for any change
+/engine/ @Sebdysart
+/engine/authority/ @Sebdysart
+/engine/evolution/ @Sebdysart
+/engine/analyzers/ @Sebdysart
+
+# Agent definitions
+/agents/ @Sebdysart
+
+# CLI commands
+/commands/ @Sebdysart
+
+# CI/CD and infrastructure
+/.github/ @Sebdysart
+
+# Configuration
+/config/ @Sebdysart
+
+# Plugin definition
+/.claude-plugin/ @Sebdysart
+
+# Tests
+/tests/ @Sebdysart
