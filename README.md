@@ -7,6 +7,11 @@
 [![CI](https://github.com/Sebdysart/omni-link-hustlexp/actions/workflows/ci.yml/badge.svg)](https://github.com/Sebdysart/omni-link-hustlexp/actions)
 [![Tests](https://img.shields.io/badge/tests-887_pass_0_fail-brightgreen.svg)](#verification)
 
+> **Ecosystem Status (April 2, 2026)**: Full source-level audit + 7 adversarial stress test loops completed.
+> Backend has 3 CRITICAL, 4 HIGH open issues. 64 TODOs tracked across all repos.
+> See [HUSTLEXP-ERRORS-AND-TODOS](https://github.com/Sebdysart/HUSTLEXP-ERRORS-AND-TODOS) for the prioritized list
+> and [HustleXP-Vault](https://github.com/Sebdysart/HustleXP-Vault) for the full 16-page audit.
+
 ## What it does
 
 This fork starts from upstream `omni-link` and narrows it around one operating model:
@@ -552,10 +557,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CLAUDE.md](CLAUDE.md) for coding con
 
 | Repo | Role | Status |
 |------|------|--------|
-| [hustlexp-api](https://github.com/Sebdysart/hustlexp-api) | Production Backend | 28/28 tests, no CI/CD |
-| [HUSTLEXPFINAL1](https://github.com/Sebdysart/HUSTLEXPFINAL1) | iOS/Mobile Client | In development, 5 security findings |
-| [HUSTLEXP-DOCS](https://github.com/Sebdysart/HUSTLEXP-DOCS) | Documentation Authority | 242 files, ~2% implementation gap |
-| [HUSTLEXP-ERRORS-AND-TODOS](https://github.com/Sebdysart/HUSTLEXP-ERRORS-AND-TODOS) | Error & Todo Tracker | All platform issues |
+| [hustlexp-ai-backend](https://github.com/Sebdysart/hustlexp-ai-backend) | Production Backend (Hono + tRPC) | 5,448 tests, 89.6% coverage, Railway deployed, 3 CRITICAL open |
+| [HUSTLEXPFINAL1](https://github.com/Sebdysart/HUSTLEXPFINAL1) | iOS Client (React Native + Swift) | CI passing, 5 security findings, 0 E2E tests |
+| [HUSTLEXP-DOCS](https://github.com/Sebdysart/HUSTLEXP-DOCS) | Documentation Authority | 316 markdown files, knowledge graph indexer (STOP-004 blocked) |
+| [HUSTLEXP-ERRORS-AND-TODOS](https://github.com/Sebdysart/HUSTLEXP-ERRORS-AND-TODOS) | Error & TODO Tracker | 64 TODOs, 12 STOP errors, 7 stress test loops |
+| [HustleXP-Vault](https://github.com/Sebdysart/HustleXP-Vault) | Obsidian Knowledge Vault | 16 audit pages, 5,200+ lines of grounded documentation |
 
 ## License
 
