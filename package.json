@@ -80,7 +80,7 @@
   },
   "dependencies": {
     "gpt-tokenizer": "^3.4.0",
-    "graphql": "^16.13.1",
+    "graphql": "^16.13.2",
     "ignore": "^7.0.5",
     "p-limit": "^7.1.1",
     "sql.js": "^1.14.1",
