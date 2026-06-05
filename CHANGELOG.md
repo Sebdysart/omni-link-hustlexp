@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-05
+
+### Added
+
+- communication-pro-max multi-agent orchestration layer: structured handoff protocol,
+  Agent Teams bridge, and a file-based MCP message bus (`communication-bus`).
+- Orchestration agents: `coordinator`, `error-coordinator`, `memory-keeper`, and
+  `team-visualizer`, plus the `structured-handoff`, `agent-teams-bridge`, and
+  `error-recovery` skills.
+- `SubagentStart` (inject-context) and `SubagentStop` (subagent-stop) hooks and a shared
+  bulletin board for inter-agent state.
+- Coverage thresholds enforced in Vitest so `test:coverage` fails on regressions.
+- CI now runs `format:check`, and `npm run verify` includes the Prettier gate.
+
+### Changed
+
+- Aligned plugin version across `package.json`, `.claude-plugin/plugin.json`, and
+  `.claude-plugin/marketplace.json` to 2.0.0.
+
+### Fixed
+
+- Test and stress-harness git fixtures now disable commit/tag signing, so the full suite
+  and `verify:max`/`stress:full` run on hosts that enforce global commit signing.
+- Declared the previously implicit `@eslint/js` dev dependency required by the flat
+  ESLint config, preventing lint failures on clean installs.
+- Removed a hardcoded macOS Java path from the toolchain semantic analyzer; Java is now
+  resolved via `JAVA_HOME` or `PATH`.
+
 ## [1.0.0] - 2026-03-07
 
 ### Added

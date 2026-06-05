@@ -6,13 +6,7 @@ import globals from 'globals';
 export default [
   // Global ignores (replaces .eslintignore)
   {
-    ignores: [
-      'dist/',
-      'coverage/',
-      'node_modules/',
-      '.tmp/',
-      'e2e-test.mjs',
-    ],
+    ignores: ['dist/', 'coverage/', 'node_modules/', '.tmp/', 'e2e-test.mjs'],
   },
   // Base config for all JS/MJS files
   {
@@ -29,10 +23,13 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       'no-console': 'off',
-      'no-unused-vars': ['error', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-      }],
+      'no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
     },
   },
   // TypeScript files

@@ -24,6 +24,9 @@ function makeRepo(root, name) {
   run('git', ['init', '-q'], repoPath);
   run('git', ['config', 'user.email', 'codex@example.com'], repoPath);
   run('git', ['config', 'user.name', 'Codex'], repoPath);
+  // Fixtures are throwaway repos; never inherit the host's commit/tag signing config.
+  run('git', ['config', 'commit.gpgsign', 'false'], repoPath);
+  run('git', ['config', 'tag.gpgsign', 'false'], repoPath);
   return repoPath;
 }
 

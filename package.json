@@ -1,6 +1,6 @@
 {
   "name": "omni-link-hustlexp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code",
   "type": "module",
   "main": "dist/index.js",
@@ -47,7 +47,7 @@
     "lint": "eslint . && tsc --noEmit",
     "prepare": "husky",
     "review:pr": "node dist/cli.js review-pr --base main --head HEAD",
-    "verify": "npm run lint && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
+    "verify": "npm run lint && npm run format:check && npm test && npm run test:coverage && npm run build && npm run smoke:cli && npm run benchmark:smoke && npm run pack:check",
     "verify:max": "npm run verify && npm run smoke:max && npm run smoke:contracts && npm run smoke:package",
     "verify:stress": "npm run verify:max && npm run stress:full && npm run test:providers:live:if-configured",
     "verify:hustlexp": "npm run verify:max && npm test -- tests/authority/index.test.ts tests/bridges/swift-trpc.test.ts tests/integration/hustlexp-profile.test.ts tests/runtime/index.test.ts tests/cli-app.test.ts tests/scripts/hustlexp-live-benchmark.test.ts"
@@ -68,6 +68,7 @@
     "skills"
   ],
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^25.5.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",

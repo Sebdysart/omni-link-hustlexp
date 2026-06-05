@@ -3,7 +3,7 @@
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
+| ------- | --------- |
 | latest  | Yes       |
 
 ## Reporting a Vulnerability
@@ -18,6 +18,7 @@ If you discover a security vulnerability in omni-link-hustlexp, please report it
 ## Scope
 
 This policy covers:
+
 - The omni-link engine (`engine/`)
 - CLI commands (`commands/`)
 - Agent definitions (`agents/`)

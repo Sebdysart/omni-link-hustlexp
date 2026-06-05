@@ -81,8 +81,20 @@ describe('Agent anti-hallucination protocol', () => {
     expect(content).toContain('rule engine');
   });
 
-  it('package.json version is 1.0.0', () => {
+  it('package.json version is valid semver', () => {
     const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('1.0.0');
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('plugin, marketplace, and package manifests share one version', () => {
+    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
+    const plugin = JSON.parse(
+      readFileSync(resolve(process.cwd(), '.claude-plugin/plugin.json'), 'utf8'),
+    );
+    const marketplace = JSON.parse(
+      readFileSync(resolve(process.cwd(), '.claude-plugin/marketplace.json'), 'utf8'),
+    );
+    expect(plugin.version).toBe(pkg.version);
+    expect(marketplace.plugins[0].version).toBe(pkg.version);
   });
 });

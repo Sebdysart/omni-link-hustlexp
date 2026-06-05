@@ -1707,7 +1707,6 @@ async function runGoHelper(
 function javaCommandCandidates(): string[] {
   const candidates = [
     process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'java') : null,
-    '/opt/homebrew/opt/openjdk@21/bin/java',
     'java',
   ].filter((candidate): candidate is string => Boolean(candidate));
   return [...new Set(candidates)];

@@ -37,6 +37,8 @@ function initGitRepo(dir: string): void {
   execSync('git init', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.email "e2e@test.dev"', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.name "E2E"', { cwd: dir, stdio: 'ignore' });
+  execSync('git config commit.gpgsign false', { cwd: dir, stdio: 'ignore' });
+  execSync('git config tag.gpgsign false', { cwd: dir, stdio: 'ignore' });
 }
 
 function commitAll(dir: string, msg: string): void {

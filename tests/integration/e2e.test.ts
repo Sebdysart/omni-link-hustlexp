@@ -32,6 +32,8 @@ function createBackendRepo(): string {
   execSync('git init', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.email "test@omni-link.dev"', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.name "E2E Test"', { cwd: dir, stdio: 'ignore' });
+  execSync('git config commit.gpgsign false', { cwd: dir, stdio: 'ignore' });
+  execSync('git config tag.gpgsign false', { cwd: dir, stdio: 'ignore' });
 
   // Create directory structure
   fs.mkdirSync(path.join(dir, 'src', 'routes'), { recursive: true });
@@ -157,6 +159,8 @@ function createiOSRepo(): string {
   execSync('git init', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.email "test@omni-link.dev"', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.name "E2E Test"', { cwd: dir, stdio: 'ignore' });
+  execSync('git config commit.gpgsign false', { cwd: dir, stdio: 'ignore' });
+  execSync('git config tag.gpgsign false', { cwd: dir, stdio: 'ignore' });
 
   // Create directory structure
   fs.mkdirSync(path.join(dir, 'Sources', 'Models'), { recursive: true });
