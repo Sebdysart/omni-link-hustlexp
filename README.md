@@ -173,6 +173,7 @@ Skills are contextual instructions that guide Claude Code's behavior within the 
 
 | Skill                  | Trigger                     | Purpose                                                                           |
 | ---------------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| `invoke`               | `/invoke <task>`            | Front door: catalog + route a task to the right skills, execute, log plugin gaps  |
 | `using-omni-link`      | Session start               | Meta skill defining iron laws, skill registry, and aggressive evolution posture   |
 | `ecosystem-grounding`  | Session start, after rescan | Ground Claude in current ecosystem state: repos, contracts, mismatches            |
 | `anti-slop-gate`       | Code generation             | Block hallucinated imports, unknown packages, wrong conventions, placeholder code |

@@ -36,24 +36,88 @@ When the digest includes **contract mismatches**, you MUST acknowledge them befo
 
 ## Skill Registry
 
-Invoke these skills based on the trigger conditions described:
+Start with **`/invoke <task>`** — it catalogs the skills below, routes your task to the right ones, executes it, and logs plugin gaps to `docs/invoke-feedback.md`. Invoke the rest directly when you already know what you need; triggers are listed per group.
 
-| Skill                   | Trigger                                   | Purpose                                                         |
-| ----------------------- | ----------------------------------------- | --------------------------------------------------------------- |
-| `ecosystem-grounding`   | Session start, after rescan               | Ground yourself in the ecosystem state before doing work        |
-| `cross-repo-impact`     | Before API/schema/type changes            | Analyze ripple effects across repos                             |
-| `anti-slop-gate`        | Before finalizing any code generation     | Block hallucinated imports, phantom packages, wrong conventions |
-| `convention-enforcer`   | During code generation                    | Match detected codebase patterns                                |
-| `dependency-navigator`  | "Where is X used?", tracing dependencies  | Cross-repo exploration and tracing                              |
-| `health-audit`          | Periodic health checks, `/health` command | Score and assess ecosystem health                               |
-| `ecosystem-planner`     | Multi-repo feature planning               | Order tasks across repos, identify coordination points          |
-| `business-evolution`    | Session start, `/evolve` command          | Surface improvement opportunities with evidence                 |
-| `upgrade-executor`      | Executing multi-repo changes              | Orchestrate changes provider-first with validation              |
-| `uncertainty-checklist` | Before presenting any generated code      | Self-audit checklist for import/type/placeholder verification   |
+### Entry point
+
+| Skill    | Trigger                          | Purpose                                                                       |
+| -------- | -------------------------------- | ----------------------------------------------------------------------------- |
+| `invoke` | `/invoke <task>`, "which skill?" | Catalog + route + execute a task, then log evidence-cited plugin improvements |
+
+### Grounding & context
+
+| Skill                  | Trigger                     | Purpose                                                   |
+| ---------------------- | --------------------------- | --------------------------------------------------------- |
+| `using-omni-link`      | Session start               | Iron laws, skill registry, evolution posture (this file)  |
+| `ecosystem-grounding`  | Session start, after rescan | Ground yourself in ecosystem state before doing work      |
+| `token-optimization`   | Context budget pressure     | Reduce tokens via dedup, compression, relevance filtering |
+| `vector-memory-search` | Triage, history comparison  | Hybrid memory search and embedding-based similarity       |
+
+### Impact & navigation
+
+| Skill                  | Trigger                                  | Purpose                             |
+| ---------------------- | ---------------------------------------- | ----------------------------------- |
+| `cross-repo-impact`    | Before API/schema/type changes           | Analyze ripple effects across repos |
+| `dependency-navigator` | "Where is X used?", tracing dependencies | Cross-repo exploration and tracing  |
+
+### Quality gates
+
+| Skill                   | Trigger                               | Purpose                                                         |
+| ----------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| `anti-slop-gate`        | Before finalizing any code generation | Block hallucinated imports, phantom packages, wrong conventions |
+| `convention-enforcer`   | During code generation                | Match detected codebase patterns                                |
+| `uncertainty-checklist` | Before presenting any generated code  | Self-audit for import/type/placeholder verification             |
+| `verification-quality`  | Pre-merge gate                        | verify / verify:max / verify:stress level reference             |
+| `zod-audit`             | Validating zod schemas/contracts      | Audit zod usage for contract correctness                        |
+
+### Planning & evolution
+
+| Skill                | Trigger                          | Purpose                                                |
+| -------------------- | -------------------------------- | ------------------------------------------------------ |
+| `ecosystem-planner`  | Multi-repo feature planning      | Order tasks across repos, identify coordination points |
+| `business-evolution` | Session start, `/evolve` command | Surface improvement opportunities with evidence        |
+| `upgrade-executor`   | Executing multi-repo changes     | Orchestrate changes provider-first with validation     |
+
+### Execution methodologies
+
+| Skill               | Trigger              | Purpose                                                             |
+| ------------------- | -------------------- | ------------------------------------------------------------------- |
+| `sparc-methodology` | Complex features     | Specification → Pseudocode → Architecture → Refinement → Completion |
+| `hustlexp-tdd`      | Test-driven changes  | Red/green/refactor discipline for HustleXP repos                    |
+| `pair-programming`  | Interactive sessions | Structured navigator/driver workflow with live review               |
+
+### Orchestration (communication-pro-max)
+
+| Skill                 | Trigger                    | Purpose                                                 |
+| --------------------- | -------------------------- | ------------------------------------------------------- |
+| `structured-handoff`  | Inter-agent delegation     | JSON handoff protocol with ecosystem context            |
+| `agent-teams-bridge`  | Multi-agent workflows      | Auto-detect Agent Teams, fallback to sub-agents         |
+| `error-recovery`      | Sub-agent failures         | Three-strike triage, backoff, and escalation            |
+| `swarm-orchestration` | Orbit loops, parallel work | Queen-worker swarm patterns, load-balanced dispatch     |
+| `self-learning-loop`  | Between orbit rounds       | Record findings, learning reports, regression detection |
+
+### HustleXP domain
+
+| Skill                    | Trigger                      | Purpose                                          |
+| ------------------------ | ---------------------------- | ------------------------------------------------ |
+| `hustlexp-revenue-fixer` | Revenue/monetization bugs    | Triage and fix revenue-path defects              |
+| `stripe-webhook-auditor` | Stripe/webhook work          | Audit Stripe webhook verification and handling   |
+| `escrow-state-guard`     | Escrow/payment state changes | Guard escrow state-machine transitions           |
+| `legal-document-manager` | Legal doc generation/updates | Manage legal document templates and placeholders |
+| `pagination-implementer` | Adding list/query endpoints  | Implement cursor/offset pagination correctly     |
+| `ios-screen-builder`     | New iOS screens              | Scaffold SwiftUI screens to convention           |
+| `ios-tRPC-wirer`         | Wiring iOS client to tRPC    | Connect Swift client to backend tRPC procedures  |
+| `beta-launch-runbook`    | Beta launch / release prep   | Step through the beta launch checklist           |
+
+### Health
+
+| Skill          | Trigger                                   | Purpose                           |
+| -------------- | ----------------------------------------- | --------------------------------- |
+| `health-audit` | Periodic health checks, `/health` command | Score and assess ecosystem health |
 
 ## Max-Tier Anti-Hallucination Mode
 
-omni-link v1.0.0 introduces structural anti-hallucination safeguards across all layers:
+omni-link v2.0.0 introduces structural anti-hallucination safeguards across all layers:
 
 ### Agent Prompts
 
@@ -102,17 +166,19 @@ omni-link is configured with an **aggressive evolution posture**. This means:
 
 ## Available Commands
 
-| Command   | What It Does                                                |
-| --------- | ----------------------------------------------------------- |
-| `/scan`   | Force full ecosystem rescan, refresh the digest             |
-| `/impact` | Analyze impact of uncommitted changes across repos          |
-| `/health` | Full ecosystem health audit with per-repo scores            |
-| `/evolve` | Run business evolution analysis, surface suggestions        |
-| `/verify` | Dispatch Validator critic agent to review generated code    |
-| `/apply`  | Execute operations previewed in dry-run (simulateOnly) mode |
+| Command   | What It Does                                                   |
+| --------- | -------------------------------------------------------------- |
+| `/invoke` | Route a task to the right skills, execute, and log plugin gaps |
+| `/scan`   | Force full ecosystem rescan, refresh the digest                |
+| `/impact` | Analyze impact of uncommitted changes across repos             |
+| `/health` | Full ecosystem health audit with per-repo scores               |
+| `/evolve` | Run business evolution analysis, surface suggestions           |
+| `/verify` | Dispatch Validator critic agent to review generated code       |
+| `/apply`  | Execute operations previewed in dry-run (simulateOnly) mode    |
 
 ## When In Doubt
 
+- If unsure which skill fits a task: run `/invoke <task>` and let it route.
 - If the digest is stale or you suspect changes since last scan: run `/scan`.
 - If you are about to modify an API endpoint or shared type: run `/impact` first.
 - If generated code references imports you have not verified: run the anti-slop-gate check.
