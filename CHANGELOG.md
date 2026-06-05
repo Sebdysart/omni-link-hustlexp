@@ -31,6 +31,10 @@ All notable changes to this project will be documented in this file.
   ESLint config, preventing lint failures on clean installs.
 - Removed a hardcoded macOS Java path from the toolchain semantic analyzer; Java is now
   resolved via `JAVA_HOME` or `PATH`.
+- Upgraded Vitest and `@vitest/coverage-v8` to v4 to clear dev-toolchain security
+  advisories, and scoped the CI security audit to production dependencies
+  (`npm audit --audit-level=high --omit=dev`) so dev-only advisories no longer block CI.
+  Coverage thresholds were retuned to the v4 measurement basis.
 
 ## [1.0.0] - 2026-03-07
 

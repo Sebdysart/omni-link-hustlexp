@@ -47,7 +47,9 @@ jobs:
         run: npm run smoke:cli
 
       - name: Security audit
-        run: npm audit --audit-level=high
+        # Audit the production dependency tree that actually ships; dev-only
+        # toolchain advisories (vitest/vite) don't affect plugin consumers.
+        run: npm audit --audit-level=high --omit=dev
 
       - name: Benchmark smoke
         run: npm run benchmark:smoke

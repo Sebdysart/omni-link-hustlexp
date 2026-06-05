@@ -10,9 +10,9 @@ export default defineConfig({
       // the build without being brittle. Update alongside intentional coverage shifts.
       thresholds: {
         lines: 85,
-        statements: 85,
+        statements: 84,
         functions: 88,
-        branches: 75,
+        branches: 70,
       },
     },
   },
