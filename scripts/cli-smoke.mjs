@@ -34,6 +34,9 @@ function initRepo(root) {
   run('git', ['init', '-q'], root);
   run('git', ['config', 'user.email', 'cli-smoke@example.com'], root);
   run('git', ['config', 'user.name', 'CLI Smoke'], root);
+  // Fixtures are throwaway repos; never inherit the host's commit/tag signing config.
+  run('git', ['config', 'commit.gpgsign', 'false'], root);
+  run('git', ['config', 'tag.gpgsign', 'false'], root);
 }
 
 function commitAll(root, message) {

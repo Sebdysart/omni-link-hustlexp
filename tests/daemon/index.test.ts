@@ -58,6 +58,8 @@ describe('daemon/index', () => {
     execSync('git init -q', { cwd: repoDir, stdio: 'ignore' });
     execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
     execSync('git config user.name "Test"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git config commit.gpgsign false', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git config tag.gpgsign false', { cwd: repoDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(repoDir, 'src', 'index.ts'), 'export const value = 1;\n', 'utf8');
     execSync('git add .', { cwd: repoDir, stdio: 'ignore' });
     execSync('git commit -qm "initial commit"', { cwd: repoDir, stdio: 'ignore' });

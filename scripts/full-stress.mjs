@@ -40,6 +40,9 @@ function initRepo(root, email, name) {
   run('git', ['init', '-q'], root);
   run('git', ['config', 'user.email', email], root);
   run('git', ['config', 'user.name', name], root);
+  // Fixtures are throwaway repos; never inherit the host's commit/tag signing config.
+  run('git', ['config', 'commit.gpgsign', 'false'], root);
+  run('git', ['config', 'tag.gpgsign', 'false'], root);
   run('git', ['branch', '-M', 'main'], root);
 }
 

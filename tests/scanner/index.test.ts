@@ -22,6 +22,8 @@ describe('scanRepo orchestrator', () => {
     execSync('git init', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git config user.name "Test"', { cwd: tmpDir, stdio: 'ignore' });
+    execSync('git config commit.gpgsign false', { cwd: tmpDir, stdio: 'ignore' });
+    execSync('git config tag.gpgsign false', { cwd: tmpDir, stdio: 'ignore' });
 
     // Create a few TypeScript source files
     fs.mkdirSync(path.join(tmpDir, 'src', 'services'), { recursive: true });
@@ -297,6 +299,8 @@ describe('scanRepo incremental caching', () => {
     execSync('git init', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git config user.name "Test"', { cwd: tmpDir, stdio: 'ignore' });
+    execSync('git config commit.gpgsign false', { cwd: tmpDir, stdio: 'ignore' });
+    execSync('git config tag.gpgsign false', { cwd: tmpDir, stdio: 'ignore' });
 
     fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
     fs.writeFileSync(
@@ -436,6 +440,8 @@ describe('scanRepo — manifest cache', () => {
     execSync('git init', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git config user.name "Test"', { cwd: tmpDir, stdio: 'ignore' });
+    execSync('git config commit.gpgsign false', { cwd: tmpDir, stdio: 'ignore' });
+    execSync('git config tag.gpgsign false', { cwd: tmpDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const x = 1;\n');
     execSync('git add -A', { cwd: tmpDir, stdio: 'ignore' });
     execSync('git commit -m "init"', { cwd: tmpDir, stdio: 'ignore' });

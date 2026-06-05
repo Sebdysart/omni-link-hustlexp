@@ -555,13 +555,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CLAUDE.md](CLAUDE.md) for coding con
 
 ## Related HustleXP Repos
 
-| Repo | Role | Status |
-|------|------|--------|
-| [hustlexp-ai-backend](https://github.com/Sebdysart/hustlexp-ai-backend) | Production Backend (Hono + tRPC) | 5,448 tests, 89.6% coverage, Railway deployed, 3 CRITICAL open |
-| [HUSTLEXPFINAL1](https://github.com/Sebdysart/HUSTLEXPFINAL1) | iOS Client (React Native + Swift) | CI passing, 5 security findings, 0 E2E tests |
-| [HUSTLEXP-DOCS](https://github.com/Sebdysart/HUSTLEXP-DOCS) | Documentation Authority | 316 markdown files, knowledge graph indexer (STOP-004 blocked) |
-| [HUSTLEXP-ERRORS-AND-TODOS](https://github.com/Sebdysart/HUSTLEXP-ERRORS-AND-TODOS) | Error & TODO Tracker | 64 TODOs, 12 STOP errors, 7 stress test loops |
-| [HustleXP-Vault](https://github.com/Sebdysart/HustleXP-Vault) | Obsidian Knowledge Vault | 16 audit pages, 5,200+ lines of grounded documentation |
+| Repo                                                                                | Role                              | Status                                                         |
+| ----------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------- |
+| [hustlexp-ai-backend](https://github.com/Sebdysart/hustlexp-ai-backend)             | Production Backend (Hono + tRPC)  | 5,448 tests, 89.6% coverage, Railway deployed, 3 CRITICAL open |
+| [HUSTLEXPFINAL1](https://github.com/Sebdysart/HUSTLEXPFINAL1)                       | iOS Client (React Native + Swift) | CI passing, 5 security findings, 0 E2E tests                   |
+| [HUSTLEXP-DOCS](https://github.com/Sebdysart/HUSTLEXP-DOCS)                         | Documentation Authority           | 316 markdown files, knowledge graph indexer (STOP-004 blocked) |
+| [HUSTLEXP-ERRORS-AND-TODOS](https://github.com/Sebdysart/HUSTLEXP-ERRORS-AND-TODOS) | Error & TODO Tracker              | 64 TODOs, 12 STOP errors, 7 stress test loops                  |
+| [HustleXP-Vault](https://github.com/Sebdysart/HustleXP-Vault)                       | Obsidian Knowledge Vault          | 16 audit pages, 5,200+ lines of grounded documentation         |
 
 ## License
 

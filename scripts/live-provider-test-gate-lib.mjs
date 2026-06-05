@@ -232,6 +232,13 @@ export async function runGitHubSandbox({
     execFileSyncImpl('git', ['-C', clonePath, 'config', 'user.email', 'sandbox@omni-link.local'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // Throwaway sandbox clone; never inherit the host's commit/tag signing config.
+    execFileSyncImpl('git', ['-C', clonePath, 'config', 'commit.gpgsign', 'false'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    execFileSyncImpl('git', ['-C', clonePath, 'config', 'tag.gpgsign', 'false'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     const sandboxDir = path.join(clonePath, '.omni-link');
     fsImpl.mkdirSync(sandboxDir, { recursive: true });
@@ -381,6 +388,13 @@ export async function runGitLabSandbox({
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     execFileSyncImpl('git', ['-C', clonePath, 'config', 'user.email', 'sandbox@omni-link.local'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    // Throwaway sandbox clone; never inherit the host's commit/tag signing config.
+    execFileSyncImpl('git', ['-C', clonePath, 'config', 'commit.gpgsign', 'false'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    execFileSyncImpl('git', ['-C', clonePath, 'config', 'tag.gpgsign', 'false'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

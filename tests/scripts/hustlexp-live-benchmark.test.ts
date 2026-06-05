@@ -34,6 +34,8 @@ function initGitRepo(dir: string): void {
   execSync('git init', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.email "test@omni-link.dev"', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.name "Fixture"', { cwd: dir, stdio: 'ignore' });
+  execSync('git config commit.gpgsign false', { cwd: dir, stdio: 'ignore' });
+  execSync('git config tag.gpgsign false', { cwd: dir, stdio: 'ignore' });
   execSync('git add -A', { cwd: dir, stdio: 'ignore' });
   execSync('git commit -m "fixture"', { cwd: dir, stdio: 'ignore' });
 }
