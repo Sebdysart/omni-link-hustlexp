@@ -64,6 +64,10 @@ export default [
       'no-console': 'off',
       'no-undef': 'off',
       'no-unused-vars': 'off',
+      // Base rule misflags TS method overload signatures as duplicates.
+      // Use the typescript-eslint version, which understands overloads.
+      'no-dupe-class-members': 'off',
+      '@typescript-eslint/no-dupe-class-members': 'error',
     },
   },
 ];
