@@ -1,5 +1,9 @@
 {
   "name": "omni-link-hustlexp",
+  "owner": {
+    "name": "Sebastian Dysart",
+    "url": "https://github.com/Sebdysart"
+  },
   "description": "HustleXP-tailored multi-repo engineering control plane for Claude Code",
   "plugins": [
     {
